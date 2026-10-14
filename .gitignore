@@ -1,0 +1,26 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Data and model outputs (often large; share separately)
+data/
+*.csv
+*.pt
+*.pth
+checkpoints/
+
+# Logs
+*.log
+cowrie*.json
+
+# Editor / OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
