@@ -24,3 +24,10 @@ Thumbs.db
 
 # Secrets
 .env
+
+# Flower runtime files
+.flwr/
+
+# Private keys
+*.pem
+*.key

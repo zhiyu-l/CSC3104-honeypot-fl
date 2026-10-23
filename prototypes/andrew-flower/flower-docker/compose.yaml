@@ -1,0 +1,65 @@
+
+services:
+  superlink:
+    build:
+      context: ..
+      dockerfile: flower-docker/Dockerfile.superlink
+    command:
+      - --insecure
+      - --host
+      - 0.0.0.0
+      - --isolation
+      - subprocess
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  supernode-a:
+    build:
+      context: ..
+      dockerfile: flower-docker/Dockerfile.supernode
+    command:
+      - --insecure
+      - --superlink
+      - superlink:8000
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9094"
+      - --isolation
+      - subprocess
+    depends_on:
+      - superlink
+
+  supernode-b:
+    build:
+      context: ..
+      dockerfile: flower-docker/Dockerfile.supernode
+    command:
+      - --insecure
+      - --superlink
+      - superlink:8000
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9094"
+      - --isolation
+      - subprocess
+    depends_on:
+      - superlink
+
+  supernode-c:
+    build:
+      context: ..
+      dockerfile: flower-docker/Dockerfile.supernode
+    command:
+      - --insecure
+      - --superlink
+      - superlink:8000
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9094"
+      - --isolation
+      - subprocess
+    depends_on:
+      - superlink
