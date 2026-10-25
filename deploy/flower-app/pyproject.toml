@@ -1,0 +1,47 @@
+# Flower app definition: what `flwr run` sends to the SuperLink.
+#
+# Holds no code. The ServerApp lives in services/coordinator and the ClientApp
+# in services/client; both are installed into the SuperLink / SuperNode images
+# (see their Dockerfiles), so the references below resolve inside the containers.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "honeypot-fl"
+version = "0.1.0"
+description = "Fault-tolerant federated learning for collaborative honeypot intrusion detection"
+license = { file = "LICENSE" }
+dependencies = ["flwr>=1.40.0,<1.41.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "csc3104"
+fab-format-version = 1
+flwr-version-target = "1.40.0"
+
+[tool.flwr.app.components]
+serverapp = "fl_coordinator.server_app:app"
+clientapp = "fl_client.client_app:app"
+
+# Read via context.run_config. Override per run with:
+#   flwr run . local-deployment --run-config "fail-prob=0.0 num-server-rounds=10"
+[tool.flwr.app.config]
+# coordinator
+num-server-rounds = 5
+strategy = "fedavg"
+quorum = 2                    # updates needed to aggregate a round
+max-retries = 2               # extra attempts per round before giving up on it
+round-timeout = 120.0         # seconds to wait for replies
+abort-on-failed-round = false # false: keep previous model and continue
+save-model = false
+seed = 0
+# client
+num-orgs = 3
+local-epochs = 3
+lr = 0.01
+batch-size = 64
+fail-prob = 0.3               # simulated client crash probability (set 0 for normal runs)

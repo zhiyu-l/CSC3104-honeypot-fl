@@ -1,0 +1,46 @@
+# Local stack: 1 coordinator (SuperLink) + 3 org clients (SuperNodes).
+# Ported from prototypes/andrew-flower/flower-docker/compose.yaml.
+#
+#   docker compose -f deploy/local/compose.yaml up --build -d
+#   cd deploy/flower-app && flwr run . local-deployment --stream
+#
+# Insecure (no TLS): local development only.
+
+x-supernode: &supernode
+  build:
+    context: ../..
+    dockerfile: services/client/Dockerfile
+  image: honeypot-fl-client
+  depends_on:
+    - superlink
+
+services:
+  superlink:
+    build:
+      context: ../..
+      dockerfile: services/coordinator/Dockerfile
+    image: honeypot-fl-coordinator
+    command: ["--insecure", "--host", "0.0.0.0", "--isolation", "subprocess"]
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  supernode-a:
+    <<: *supernode
+    environment:
+      FL_ORG_ID: org-a
+      FL_ORG_INDEX: "0"
+    command: ["--insecure", "--superlink", "superlink:8000", "--host", "0.0.0.0", "--port", "9094", "--isolation", "subprocess"]
+
+  supernode-b:
+    <<: *supernode
+    environment:
+      FL_ORG_ID: org-b
+      FL_ORG_INDEX: "1"
+    command: ["--insecure", "--superlink", "superlink:8000", "--host", "0.0.0.0", "--port", "9094", "--isolation", "subprocess"]
+
+  supernode-c:
+    <<: *supernode
+    environment:
+      FL_ORG_ID: org-c
+      FL_ORG_INDEX: "2"
+    command: ["--insecure", "--superlink", "superlink:8000", "--host", "0.0.0.0", "--port", "9094", "--isolation", "subprocess"]

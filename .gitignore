@@ -31,3 +31,8 @@ Thumbs.db
 # Private keys
 *.pem
 *.key
+
+# Python packaging / test output
+*.egg-info/
+.pytest_cache/
+final_model.npz
