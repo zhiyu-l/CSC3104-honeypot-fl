@@ -6,7 +6,7 @@ prototype in `prototypes/andrew-flower/`.
 
 ## 1. Python environment (for `flwr` CLI and tests)
 
-From the repo root, with Python 3.10+:
+From the repo root, with Python 3.11+ (Flower 1.40 does not support 3.10):
 
 ```powershell
 py -3.12 -m venv .venv

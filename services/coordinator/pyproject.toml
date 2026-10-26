@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "fl-coordinator"
 version = "0.1.0"
 description = "Flower ServerApp: fault-tolerant coordinator for CSC3104-honeypot-fl"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fl-common",
     "flwr>=1.40.0,<1.41.0",

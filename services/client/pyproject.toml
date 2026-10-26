@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "fl-client"
 version = "0.1.0"
 description = "Flower ClientApp: trains the shared model on one org's local sessions"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "fl-common",
     "flwr>=1.40.0,<1.41.0",

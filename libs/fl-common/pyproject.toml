@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "fl-common"
 version = "0.1.0"
 description = "Shared model, feature schema and update metadata for CSC3104-honeypot-fl"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
     "torch>=2.2",
