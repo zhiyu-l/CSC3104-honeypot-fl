@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: orgb
+namespace: default
 labels:
 - pairs:
     organisation: orgb
@@ -8,7 +8,6 @@ labels:
   includeTemplates: true
 resources:
 - ../../../../base/cowrie
-- namespace.yaml
 - pv.template.yaml
 - service.template.yaml
 - upload-settings.template.yaml

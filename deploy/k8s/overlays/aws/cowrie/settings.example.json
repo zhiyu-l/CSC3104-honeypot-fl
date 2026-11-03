@@ -4,6 +4,9 @@
   "efs_filesystem_id": "REPLACE_EFS_FILESYSTEM_ID",
   "organisations": {
     "orga": {
+      "cluster_name": "orga-honeypot-cluster",
+      "kubectl_context": "orga-honeypot-cluster",
+      "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orga-honeypot-cluster",
       "efs_access_point_id": "REPLACE_EFS_ACCESS_POINT_ORGA",
       "allowed_source_cidrs": [
         "REPLACE_ALLOWED_SOURCE_CIDR"
@@ -11,6 +14,9 @@
       "uploader_role_arn": "arn:aws:iam::REPLACE_AWS_ACCOUNT_ID:role/REPLACE_UPLOADER_ROLE_ORGA"
     },
     "orgb": {
+      "cluster_name": "orgb-honeypot-cluster",
+      "kubectl_context": "orgb-honeypot-cluster",
+      "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orgb-honeypot-cluster",
       "efs_access_point_id": "REPLACE_EFS_ACCESS_POINT_ORGB",
       "allowed_source_cidrs": [
         "REPLACE_ALLOWED_SOURCE_CIDR"
@@ -18,6 +24,9 @@
       "uploader_role_arn": "arn:aws:iam::REPLACE_AWS_ACCOUNT_ID:role/REPLACE_UPLOADER_ROLE_ORGB"
     },
     "orgc": {
+      "cluster_name": "orgc-honeypot-cluster",
+      "kubectl_context": "orgc-honeypot-cluster",
+      "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orgc-honeypot-cluster",
       "efs_access_point_id": "REPLACE_EFS_ACCESS_POINT_ORGC",
       "allowed_source_cidrs": [
         "REPLACE_ALLOWED_SOURCE_CIDR"

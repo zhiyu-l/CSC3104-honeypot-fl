@@ -1,109 +1,165 @@
-# Cowrie Kubernetes configuration
+# Cowrie on three EKS clusters
 
-This configuration was extracted from the `cowrie-recovery-20261025T053325Z`
-recovery snapshot for `orga`, `orgb` and `orgc`. The original backup stays outside
-the repository and is unchanged. Treat it as sensitive: namespace exports contain
-base64-encoded Secret data and private SSH host keys.
+The deployment targets are separate clusters. Each uses the existing `default`
+namespace; organisation identity is carried by labels and configuration.
 
-## Files and scope
+| Organisation | EKS cluster | Required kubectl context alias | Namespace | S3 prefix |
+| --- | --- | --- | --- | --- |
+| orga | orga-honeypot-cluster | orga-honeypot-cluster | default | orga/raw/ |
+| orgb | orgb-honeypot-cluster | orgb-honeypot-cluster | default | orgb/raw/ |
+| orgc | orgc-honeypot-cluster | orgc-honeypot-cluster | default | orgc/raw/ |
 
-| Location | Purpose |
-| --- | --- |
-| `services/cowrie/` | Cowrie configuration, upload script, dry-run cleanup checker and placeholder Secret examples |
-| `deploy/k8s/base/cowrie/` | Shared Deployment, HPA, PVC, uploader ServiceAccount and suspended upload CronJob |
-| `deploy/k8s/overlays/aws/cowrie/{orga,orgb,orgc}/` | Namespace, organisation/hostname patches, static PV binding and AWS Service/configuration templates |
-| `infra/cowrie/` | Parameterised IAM examples and AWS prerequisite/reference notes |
-| `.local/cowrie/` | Ignored settings, local Secrets and rendered applicable YAML |
+The original recovery snapshots describe one shared cluster with three organisation
+namespaces. They remain unchanged outside Git. These new manifests are a migration
+target, not proof that any new cluster exists or that migration has occurred.
 
-There are 36 rendered resources: per organisation, one Namespace, Deployment,
-HPA, PVC, PV, Service, ServiceAccount and CronJob, plus four ConfigMaps. The four
-ConfigMaps are Cowrie config, upload settings, upload script and the dry-run
-cleanup checker. The checker is retained for manual inspection; nothing runs it
-automatically. Completed Jobs, pod inventories, default ServiceAccounts,
-`kube-root-ca.crt`, broad cluster RBAC and all real Secrets are excluded.
+## Source and generated files
 
-The AWS overlays are **templates**, including their `kustomization.yaml` entry
-points. A successful Kustomize build does not make the placeholder values usable.
-The base is a shared building block and still requires AWS configuration and
-local Secrets. No working local-cluster deployment is supplied.
+- `services/cowrie/`: shared Cowrie config, upload script, dry-run cleanup checker
+  and placeholder Secret examples. Per-organisation hostname patches remain.
+- `deploy/k8s/base/cowrie/`: shared Deployment, HPA, PVC, uploader ServiceAccount
+  and suspended upload CronJob.
+- `deploy/k8s/overlays/aws/cowrie/{orga,orgb,orgc}/`: independent cluster overlays,
+  labels, hostname, static PV reservation, upload settings and SSH NLB templates.
+- `infra/cowrie/`: IAM trust/permission templates and one Pod Identity association
+  template per named cluster, all targeting service account
+  `default/cowrie-log-uploader`.
+- `.local/cowrie/`: ignored settings, Secrets and per-cluster rendered outputs.
 
-## Prerequisites
+There are **33 resources, 11 per cluster**: Deployment, HPA, PVC, PV, Service,
+ServiceAccount, CronJob and four ConfigMaps. There are no Namespace manifests and
+no combined top-level Kustomization: these resources have identical names in
+`default` and must never be applied together to one cluster. No application Role,
+RoleBinding or cluster-wide RBAC is required by these workloads. Cowrie does not
+mount a service-account token; the uploader uses AWS Pod Identity, not Kubernetes
+API permissions. Do not restore broad cluster RBAC from the backups.
 
-Use Python 3.10+, `kubectl` with Kustomize support and, for local Secret generation,
-OpenSSH tools. The commands below run from the repository root. The secret
-generation block uses Bash (Git Bash or WSL on Windows); the remaining examples
-use PowerShell. Replace `python` with your Python executable if necessary.
+AWS overlays contain placeholders and are **not directly applicable**. Completed
+Jobs, pod inventories, generated CA ConfigMaps, default service accounts, real
+Secrets and AWS describe-output snapshots are excluded.
+
+## Prerequisites and settings
+
+Use Python 3.10+, kubectl with Kustomize, and OpenSSH for local keys. Commands run
+from the repo root; examples use PowerShell except the marked Bash block.
 
 ```powershell
 python -m pip install -r deploy/k8s/cowrie-requirements.txt
-```
-
-Before deploying, the infrastructure owner must provide the EKS cluster, capacity,
-EFS CSI driver/IAM, EFS filesystem and three access points, Metrics Server, S3
-bucket, and uploader Pod Identity roles/associations. See
-[`infra/cowrie/README.md`](../infra/cowrie/README.md) for networking, UID/GID,
-permissions and IAM details. Verify the current cluster version and use a
-compatible kubectl; the recovery described Kubernetes 1.37.
-
-The backed-up Service uses `loadBalancerClass: eks.amazonaws.com/nlb` (EKS Auto
-Mode), IP targets, internet-facing NLBs, TCP health checks and cross-zone load
-balancing. These functional annotations are preserved. Another controller requires
-a deliberate Service adaptation. Applying a LoadBalancer Service can create AWS
-resources and incur charges. Restrict SSH to the approved source CIDRs before
-applying it. Cowrie must remain isolated from FL/training services; the recovery
-did not contain NetworkPolicies. Establish and verify network isolation for the
-target cluster before exposing the honeypot.
-
-## Configure and render locally
-
-```powershell
 New-Item -ItemType Directory -Force .local/cowrie | Out-Null
 Copy-Item deploy/k8s/overlays/aws/cowrie/settings.example.json .local/cowrie/settings.json
 ```
 
-Edit `.local/cowrie/settings.json` with the actual region, bucket, EFS filesystem,
-three distinct access point IDs, one uploader role ARN per organisation and
-approved IPv4 CIDRs. The renderer rejects unresolved placeholders, duplicate
-access points, malformed IDs/ARNs and unrestricted `/0` source ranges. Do not put
-AWS access keys, session tokens or passwords into settings. Authenticate local AWS
-CLI sessions through your normal profile/SSO outside the repository.
+Fill every placeholder in settings. Keep the fixed cluster names/context aliases;
+provide each actual EKS cluster ARN, its own uploader role ARN, a distinct EFS
+access point and approved source IPv4 CIDRs. Region, bucket and EFS filesystem
+remain common settings; access points, IAM roles and S3 prefixes remain separate.
+Each uploader role must belong to its cluster's AWS account/partition. Establish
+EFS and S3 cross-account permissions separately if using different accounts.
+Never put passwords, AWS access keys or tokens into settings or version control.
+
+The infrastructure owner must provide all **three** clusters, worker capacity,
+Metrics Server, EFS CSI/IAM, Pod Identity support/agent and role associations,
+network isolation, EFS mount targets/access and S3 storage. See
+[the infrastructure notes](../infra/cowrie/README.md). These files do not provision
+clusters, network resources or a complete AWS stack. The Service retains EKS Auto
+Mode class `eks.amazonaws.com/nlb`, internet-facing IP targets, cross-zone balancing
+and TCP health checks; adapt deliberately for another controller. Applying the
+Service later can create an NLB. Check approved source CIDRs and isolation first.
+
+## Explicit contexts and guarded operations
+
+After clusters exist and operator authentication is configured, register the three
+context aliases. These are **future operator setup commands**, not provisioning:
+
+```powershell
+$settings = Get-Content -Raw .local/cowrie/settings.json | ConvertFrom-Json
+aws eks update-kubeconfig --region $settings.aws_region --name orga-honeypot-cluster --alias orga-honeypot-cluster
+aws eks update-kubeconfig --region $settings.aws_region --name orgb-honeypot-cluster --alias orgb-honeypot-cluster
+aws eks update-kubeconfig --region $settings.aws_region --name orgc-honeypot-cluster --alias orgc-honeypot-cluster
+```
+
+Use the appropriate AWS profile/SSO identity for each account. The uploader role
+is not an operator authentication role. `update-kubeconfig` can change the active
+context; all operations below ignore that implicit selection.
+
+Use the wrapper for **every** operational command:
+
+```powershell
+python deploy/k8s/cowrie_config.py check-context --org orga
+python deploy/k8s/cowrie_config.py check-context --org orgb
+python deploy/k8s/cowrie_config.py check-context --org orgc
+python deploy/k8s/cowrie_config.py kubectl --org orga -- get pods
+python deploy/k8s/cowrie_config.py kubectl --org orgb -- get pods
+python deploy/k8s/cowrie_config.py kubectl --org orgc -- get pods
+```
+
+For example, `--org orga` always executes `kubectl --context orga-honeypot-cluster
+--namespace default ...`. The wrapper first reads that context's local kubeconfig
+cluster reference and requires the exact configured EKS ARN. It refuses context,
+namespace, cluster, user, server and kubeconfig overrides. File operations accept
+only the selected organisation's rendered YAML or local Secret files; target ARN,
+labels and namespaces are checked before invoking a cluster command. Combined,
+foreign-organisation, template and standard-input manifest paths are rejected.
+The check does not independently authenticate a kubeconfig server address or prove
+that the remote cluster is healthy; protect kubeconfig and verify it against AWS
+through the infrastructure owner. No script changes `current-context`.
+
+Offline Kustomize builds also specify the organisation's context and `default`
+namespace explicitly, but do not read cluster state or require working credentials.
+
+## Render and validate locally
 
 ```powershell
 python deploy/k8s/cowrie_config.py validate
 python deploy/k8s/cowrie_config.py render
 python deploy/k8s/cowrie_config.py validate --rendered
+# Optional single-cluster operation:
+python deploy/k8s/cowrie_config.py validate --org orga
 ```
 
-The renderer only runs `kubectl kustomize`, validates references and writes five
-files in `.local/cowrie/rendered/`: `namespaces.yaml`, `storage.yaml`,
-`configuration.yaml`, `workloads.yaml` and `services.yaml`. It does not call AWS or
-the Kubernetes API. It changes structured fields rather than substituting shell
-variables in the upload script. Review those files before applying. Render again
-after source/configuration changes; stale files are not updated automatically.
+Render/validate default to all three targets **independently**. The renderer writes
+`.local/cowrie/rendered/<org>/storage.yaml`, `configuration.yaml`, `workloads.yaml`,
+`services.yaml`, `target.json` and `infra/*.json`. It never contacts AWS or a
+cluster. `target.json` binds an output directory to its organisation, EKS ARN,
+context and namespace. There is no `namespaces.yaml`. Old combined outputs from
+the shared-cluster design are obsolete; the wrapper refuses them. Inspect them
+and retire them locally instead of applying them. Render again after any source
+or setting change; existing files are not refreshed automatically.
 
-## Generate Secrets locally
+The renderer rejects placeholders, mismatched contexts/cluster ARNs, duplicate EFS
+access points/roles and unrestricted `/0` CIDRs. Local validation checks references,
+labels, default namespaces, PV reservations, selectors/ports, HPA behavior, UID log
+mounts and the uploader's full-root mount. Optional offline structural API checks:
 
-`services/cowrie/secrets.example.yaml` shows the required names and keys using
-plain placeholders only. **Do not apply it.** No real Secret data, including
-base64 data, belongs in Git. Generate fresh keys separately for each organisation;
-all replicas in that namespace then share its SSH identity. If a restored external
-deployment must retain its old SSH fingerprint, recover its keys securely outside
-Git instead of copying backup exports into this repository.
+```powershell
+python deploy/k8s/cowrie_config.py validate --schema <path-to-official-swagger.json>
+python -m unittest discover -s deploy/k8s/tests -v
+```
 
-In Bash, generate local files only (the `kubectl create secret --dry-run=client`
-commands below do not create cluster Secrets):
+Use the official Kubernetes `swagger.json` for the target version outside Git.
+The validator normalizes OpenAPI `IntOrString`; admission, IAM, EFS, metrics and
+application behavior still require a live cluster.
+
+## Generate local Secrets
+
+The Secret examples contain placeholders only and target `default`. Never apply
+them. Keep distinct host keys and decoy login data for each organisation, even
+though the resource names are the same in all three clusters. Base64 is sensitive.
+If retaining an old SSH fingerprint, recover the keys securely outside Git.
+
+In **Bash**, after configuring settings/context aliases, generate local files only:
 
 ```bash
 set -euo pipefail
 umask 077
-mkdir -p .local/cowrie/secrets
+tool=deploy/k8s/cowrie_config.py
 for org in orga orgb orgc; do
+  python "$tool" check-context --org "$org"
   dir=".local/cowrie/secrets/$org"
   mkdir -p "$dir"
-  # Run once; do not overwrite an existing key set.
   for algorithm in rsa ecdsa ed25519; do
     if [ -e "$dir/ssh_host_${algorithm}_key" ]; then
-      echo "Existing key set for $org; inspect it before regenerating" >&2
+      echo "Existing key set for $org; inspect before regenerating" >&2
       exit 1
     fi
   done
@@ -111,154 +167,143 @@ for org in orga orgb orgc; do
   ssh-keygen -q -t ecdsa -b 256 -N "" -f "$dir/ssh_host_ecdsa_key"
   ssh-keygen -q -t ed25519 -N "" -f "$dir/ssh_host_ed25519_key"
   cp services/cowrie/userdb.example.txt "$dir/userdb.txt"
-  # Set organisation-specific DECOY login entries; never reuse a real password.
   "${EDITOR:-vi}" "$dir/userdb.txt"
   if grep -q REPLACE_ "$dir/userdb.txt"; then
-    echo "Replace userdb placeholders before continuing" >&2
+    echo "Replace decoy userdb placeholders before continuing" >&2
     exit 1
   fi
-  kubectl -n "$org" create secret generic cowrie-host-keys \
+  python "$tool" kubectl --org "$org" -- create secret generic cowrie-host-keys \
     --from-file="$dir/ssh_host_rsa_key" --from-file="$dir/ssh_host_rsa_key.pub" \
     --from-file="$dir/ssh_host_ecdsa_key" --from-file="$dir/ssh_host_ecdsa_key.pub" \
     --from-file="$dir/ssh_host_ed25519_key" --from-file="$dir/ssh_host_ed25519_key.pub" \
-    --dry-run=client -o yaml > ".local/cowrie/secrets/$org-host-keys.secret.yaml"
-  kubectl -n "$org" create secret generic cowrie-userdb \
-    --from-file="$dir/userdb.txt" --dry-run=client -o yaml \
-    > ".local/cowrie/secrets/$org-userdb.secret.yaml"
+    --dry-run=client -o yaml > "$dir/host-keys.secret.yaml"
+  python "$tool" kubectl --org "$org" -- create secret generic cowrie-userdb \
+    --from-file="$dir/userdb.txt" --dry-run=client -o yaml > "$dir/userdb.secret.yaml"
 done
 ```
 
-Restrict access to `.local/` on your machine (Windows ACLs where applicable).
-Do not paste the output of Secret commands into issues, PRs or reports. After
-rotating Secrets/configuration, restart Cowrie pods deliberately: the file mounts
-use `subPath`, so changes do not refresh inside existing pods automatically.
+The wrapper reads local kubeconfig and `--dry-run=client` generates Secret YAML;
+it does not create cluster Secrets. Restrict filesystem access, including Windows
+ACLs where needed. Never reuse a real password or paste generated Secrets into
+issues/reports. After rotating mounted Secrets/configuration, deliberately restart
+Cowrie: its `subPath` file mounts do not refresh inside an existing pod.
 
-## Deployment order (manual, after review)
+## Deployment order and migration (future manual operations)
 
-These commands are instructions for a future deployment; preparation and offline
-validation do not execute them. Confirm `kubectl config current-context` first.
-On an existing cluster, inspect resources with these names and coordinate with
-their owners before applying. Do not overwrite another team's workload or rebind
-a volume belonging to a live claim.
-
-1. Complete the AWS prerequisites through the infrastructure owner's stack. The
-   backup's AWS JSON files are describe-output reference snapshots, **not directly
-   deployable infrastructure**, CloudFormation templates or create API inputs.
-2. Apply namespaces, then storage:
-
-   ```powershell
-   kubectl apply --dry-run=server -f .local/cowrie/rendered/namespaces.yaml
-   kubectl apply -f .local/cowrie/rendered/namespaces.yaml
-   kubectl apply --dry-run=server -f .local/cowrie/rendered/storage.yaml
-   kubectl apply -f .local/cowrie/rendered/storage.yaml
-   kubectl get pv
-   foreach ($org in @('orga','orgb','orgc')) { kubectl -n $org get pvc cowrie-logs }
-   ```
-
-   Wait for each PVC to be `Bound` to its matching `cowrie-logs-<org>` PV. Static
-   binding deliberately retains `PVC.spec.volumeName` and a PV `claimRef` with
-   name/namespace only. Old claim UID/resourceVersion, binding annotations,
-   protection finalizers and status are removed. Explicit empty storage classes
-   avoid accidental default dynamic provisioning. Each PV uses `Retain`, TLS and
-   its organisation's access point. `5Gi` is a Kubernetes binding value, not an EFS
-   capacity quota. Old retained PVs may still reference a deleted claim UID:
-   reconcile those manually only after confirming the old claim is gone and the
-   data/access point owner approves. New manifests cannot clear stale live state
-   safely just by being reapplied.
-3. Apply the locally generated Secrets and shared configuration:
-
-   ```powershell
-   Get-ChildItem .local/cowrie/secrets -Filter *.secret.yaml | ForEach-Object { kubectl apply -f $_.FullName }
-   kubectl apply --dry-run=server -f .local/cowrie/rendered/configuration.yaml
-   kubectl apply -f .local/cowrie/rendered/configuration.yaml
-   ```
-
-4. Verify the Pod Identity associations for `cowrie-log-uploader` in all three
-   namespaces. The role ARNs in settings do not configure these associations.
-   The infrastructure owner must create them externally, with matching trust and
-   S3 prefix permissions. For an approved future CLI setup, use
-   `aws eks create-pod-identity-association --cluster-name <cluster> --namespace <org> --service-account cowrie-log-uploader --role-arn <role-arn>`.
-   Do not add AWS credentials to a ConfigMap/Secret or give Cowrie the uploader role.
-5. Apply workloads and inspect pods/HPA before creating public exposure:
-
-   ```powershell
-   kubectl apply --dry-run=server -f .local/cowrie/rendered/workloads.yaml
-   kubectl apply -f .local/cowrie/rendered/workloads.yaml
-   foreach ($org in @('orga','orgb','orgc')) {
-     kubectl -n $org rollout status deployment/cowrie
-     kubectl -n $org get pods,hpa,cronjobs
-   }
-   ```
-
-6. Confirm network isolation, approved CIDRs and the NLB configuration, then apply
-   `services.yaml` using the same server-dry-run/apply sequence. This step can
-   provision NLBs. Connect from an allowed source to the resulting hostname on
-   TCP port `2222`; verify a disallowed source is blocked.
-
-## Validation and uploader activation
-
-The local validator checks YAML parsing, duplicate resource identities, namespace
-and ConfigMap/Secret/PVC/service-account references, ConfigMap keys, volume mounts,
-Deployment/Service selectors and target ports, HPA target/bounds/CPU and scaling
-policies, CronJob scheduling and EFS claim reservations. It also checks UID-based
-replica log mounts, non-destructive directory preparation, and that the uploader
-mounts the same claim at its root without a pod-specific subpath. Kustomize rewrites generated
-ConfigMap names with content hashes; the validator checks those final references.
-It reports the two intentionally external Secrets in each namespace.
-
-For API schema validation, download the official Kubernetes `swagger.json` for
-your target release outside the repo and run:
+No command in this section has been executed during preparation. Choose **one**
+organisation per terminal and repeat the procedure separately for all three:
 
 ```powershell
-python deploy/k8s/cowrie_config.py validate --rendered --schema <path-to-swagger.json>
+$org = 'orga' # Select orgb or orgc explicitly in the corresponding terminal.
+$tool = 'deploy/k8s/cowrie_config.py'
+$rendered = ".local/cowrie/rendered/$org"
+python $tool check-context --org $org
 ```
 
-This performs offline structural schema checks, adapting Kubernetes OpenAPI's
-`IntOrString` format to accept either integers or strings. API admission, IAM, actual EFS
-ownership/mounting, container startup, metrics availability, NLB routing/source
-filtering and S3 access require a live cluster. Verify the UID-based log
-subdirectories are writable and separate in each access point. Inspect events,
-`kubectl top pods`, HPA conditions and `kubectl describe` output without dumping
-Secrets. Confirm Cowrie cannot access uploader credentials or training workloads.
+1. Coordinate infrastructure and ownership. Review the existing `default`
+   namespace for collisions: these workloads are named `cowrie`, `cowrie-hpa`,
+   `cowrie-logs`, `cowrie-log-uploader` and `cowrie-logs-to-s3` in every cluster.
+   Apply network isolation before exposing Cowrie to traffic. For migration,
+   coordinate stopping old writers/upload schedules and traffic cutover with the
+   old cluster's owner. Do not mutate or delete the old installation/backups as
+   part of preparing these files. Reusing the same organisation access point
+   preserves old UID log directories; overlapping uploaders can duplicate objects.
+2. The built-in `default` namespace already exists. Apply storage, wait for the
+   PVC to bind to `cowrie-logs-<org>`, then apply Secrets and configuration:
 
-The CronJob retains the backup's `suspend: true`, `Forbid` concurrency policy,
-midnight `Asia/Singapore` schedule, one-hour start/execution deadlines, three
-retries and history limits of three. Generate a controlled, non-sensitive Cowrie
-log first. A **manual Job can run even while the CronJob is suspended**:
+   ```powershell
+   python $tool kubectl --org $org -- apply --dry-run=server -f "$rendered/storage.yaml"
+   python $tool kubectl --org $org -- apply -f "$rendered/storage.yaml"
+   python $tool kubectl --org $org -- get pv
+   python $tool kubectl --org $org -- get pvc cowrie-logs
+   Get-ChildItem ".local/cowrie/secrets/$org" -Filter *.secret.yaml | ForEach-Object { python $tool kubectl --org $org -- apply -f $_.FullName }
+   python $tool kubectl --org $org -- apply --dry-run=server -f "$rendered/configuration.yaml"
+   python $tool kubectl --org $org -- apply -f "$rendered/configuration.yaml"
+   ```
+
+   PV `claimRef` is `default/cowrie-logs` with no old UID/resourceVersion. PVC
+   `volumeName` remains organisation-specific. Empty storage classes preserve
+   static provisioning, RWX EFS and TLS are retained, and `5Gi` is a binding value,
+   not an EFS quota. Existing stale live PV bindings need owner review; do not
+   clear a live claim UID or adopt someone else's volume automatically.
+3. Have the infrastructure owner install the rendered per-cluster Pod Identity
+   trust/permission policy and association under `$rendered/infra/`. The association
+   specifies the exact cluster name, namespace `default`, service account
+   `cowrie-log-uploader` and that organisation's role ARN. Role ARNs in settings
+   do not automatically create associations. See the infrastructure instructions;
+   no IRSA annotations or static AWS credentials are added.
+4. Apply workloads and inspect the organisation's pods and metrics:
+
+   ```powershell
+   python $tool kubectl --org $org -- apply --dry-run=server -f "$rendered/workloads.yaml"
+   python $tool kubectl --org $org -- apply -f "$rendered/workloads.yaml"
+   python $tool kubectl --org $org -- rollout status deployment/cowrie
+   python $tool kubectl --org $org -- get pods,hpa,cronjobs
+   python $tool kubectl --org $org -- top pods -l app=cowrie
+   ```
+
+5. Confirm isolation, approved CIDRs and NLB settings before applying the Service:
+
+   ```powershell
+   python $tool kubectl --org $org -- apply --dry-run=server -f "$rendered/services.yaml"
+   python $tool kubectl --org $org -- apply -f "$rendered/services.yaml"
+   python $tool kubectl --org $org -- get service cowrie-ssh
+   ```
+
+   Test SSH on the resulting hostname's port 2222 from an approved source and
+   verify a disallowed source is blocked. Inspect events without dumping Secrets.
+
+## Persistent logs and uploader identity
+
+Both Cowrie and its init container read `POD_UID` from `metadata.uid`. The init
+container creates `/efs/<pod-uid>` on the PVC with `mkdir -p`; Cowrie mounts that
+same directory at `/cowrie/cowrie-git/var/log/cowrie` using
+`subPathExpr: $(POD_UID)`. Every replica/replacement gets a different directory.
+The uploader mounts the whole same PVC read-only at `/logs`, without a subpath,
+and scans `/logs/*/cowrie.json*` including deleted pods' directories. PVs use
+`Retain`; pod deletion does not remove the directory or PVC. The cleanup checker
+is a dry-run ConfigMap with no automated workload. Actual EFS permissions and
+log writes must still be verified live.
+
+**Uploader `ORG` now comes from `metadata.labels['organisation']`, not the
+namespace.** Each CronJob pod has the appropriate organisation label. This keeps
+`orga/raw/`, `orgb/raw/` and `orgc/raw/` separate even though all namespaces are
+`default`. IAM allows uploads only to the matching prefix and the trust binds
+cluster ARN, `default` namespace and service account. Verify cross-organisation
+access is denied using operator-controlled tests.
+
+The CronJob remains suspended, runs at midnight `Asia/Singapore` when enabled,
+uses `Forbid` concurrency, one-hour start/execution deadlines, three retries and
+history limits of three. A manual Job runs while the CronJob is suspended:
 
 ```powershell
-kubectl -n orga create job --from=cronjob/cowrie-logs-to-s3 cowrie-upload-validation
-kubectl -n orga wait --for=condition=complete job/cowrie-upload-validation --timeout=3600s
-kubectl -n orga logs job/cowrie-upload-validation
+$job = 'cowrie-upload-' + (Get-Date -Format 'yyyyMMddHHmmss')
+python $tool kubectl --org $org -- create job --from=cronjob/cowrie-logs-to-s3 $job
+python $tool kubectl --org $org -- wait --for=condition=complete "job/$job" --timeout=3600s
+python $tool kubectl --org $org -- logs "job/$job"
 ```
 
-Repeat for orgb/orgc and verify the STS identity and objects under
-`s3://<bucket>/<org>/raw/<UTC-date>/`. Object names include upload timestamp,
-uploader pod UID, source pod UID and original filename. The uploader skips symlinks
-and `cowrie.json.pipeline-test*`, fails if there are no matching log files, copies
-active and rotated logs, and does not delete or deduplicate source data. Active
-files can change during upload; a successful copy is not a consistent archival
-snapshot. Repeated runs create additional objects. Verify object contents and
-cross-organisation denial with your operator identity; uploader roles intentionally
-cannot read or delete logs. Do not approve EFS deletion based only on copy success.
+Generate benign logs first. Verify STS identity and objects under
+`s3://<bucket>/<org>/raw/<UTC-date>/`. Names include upload timestamp, uploader UID,
+source pod UID and original filename. Uploads skip symlinks/pipeline-test files,
+fail on no matches, include active/rotated files and never delete source logs.
+Active files may change during copying; uploads are not a consistent snapshot or
+deduplicated archive. Operator credentials must verify contents because uploader
+roles cannot read/delete objects. Do not approve EFS deletion from copy success.
 
-After validation, deliberately change the source CronJob's `suspend` setting and
-update its validator policy in a reviewed change, then render/apply again. For a
-temporary live trial, `kubectl -n <org> patch cronjob cowrie-logs-to-s3 --type=merge -p '{"spec":{"suspend":false}}'`
-enables scheduling, but reapplying current manifests suspends it again. Unsuspending
-can immediately schedule a missed run within `startingDeadlineSeconds`; plan for it.
+Enable scheduling only after live validation in a reviewed source change (and
+update the validator's expected suspension policy). A temporary operator trial
+can use the guarded wrapper with `patch cronjob cowrie-logs-to-s3 --type=merge`
+and a patch file, but reapplying the current source suspends it again. Unsuspending
+may immediately schedule a missed run within its start deadline.
 
-## HPA configuration and test status
+## HPA and manual scale test
 
-| Configuration | Scale-down | Runtime test status |
-| --- | --- | --- |
-| Previously tested recovery baseline | `selectPolicy: Disabled`; scale-up only | Historical scale-up testing; not rerun during repository preparation |
-| Current repository configuration | 300-second stabilization, `Min`, one pod per 60 seconds | **Untested on a live cluster**; local manifest/schema checks only |
-
-All three organisation overlays inherit the same updated HPA. Min replicas `1`,
-max replicas `3`, CPU utilisation target `60%`, scale-up `Max` of four pods or
-100% per 15 seconds, and zero scale-up stabilization remain unchanged. The new
-scale-down policy is:
+The historical recovery baseline tested scale-up only (`scaleDown: Disabled`).
+The repository now enables **both directions in all three cluster overlays**;
+scale-down and this three-cluster architecture are **untested on a live cluster**.
+Min/max replicas remain 1/3 and CPU target 60%. Scale-up retains `Max` of four
+pods or 100% per 15 seconds and zero stabilization. Scale-down uses:
 
 ```yaml
 scaleDown:
@@ -270,156 +315,108 @@ scaleDown:
       periodSeconds: 60
 ```
 
-With sustained low CPU demand, the HPA can reduce replicas toward one, using the
-highest recommendation in the trailing 300-second stabilization window and
-removing at most one replica per 60 seconds. Metric collection and reconciliation
-can delay changes further; five minutes is not an exact wall-clock deadline.
-The Deployment still starts at the backed-up three replicas. Reapplying its
-`replicas: 3` can reset an HPA-managed count, so do not reapply the Deployment
-during a scaling measurement.
+With sustained low CPU, the controller considers the highest recommendation in
+the trailing 300 seconds and removes at most one replica per 60 seconds. Metrics
+and reconciliation can delay this further. **Scale-down can disconnect active
+SSH sessions: CPU-based HPA does not check whether sessions are active.** The
+30-second grace period is not session draining or a guarantee of flushed logs.
 
-**Scale-down can disconnect active SSH sessions. CPU-based HPA does not check
-whether sessions are active.** A low-CPU interactive session does not prevent
-its pod from being terminated. The existing 30-second termination grace period
-does not guarantee that a session finishes or all buffered log events are flushed.
-No session-draining mechanism is added by this policy.
+Repeat these four steps separately for each explicitly selected `$org`, after an
+approved isolated test deployment. Initialize `$org` and `$tool` as above in each
+terminal. Keep uploads suspended. Save evidence in `.local/cowrie/scaling-test/$org/`.
 
-### Persistent logs across replica deletion
-
-The manifest wiring is verified locally for all three organisations:
-
-- `POD_UID` comes from `metadata.uid` in both Cowrie and its init container.
-  The init container creates `/efs/<pod-uid>` on the `cowrie-logs` PVC with
-  `mkdir -p`; it does not remove existing directories.
-- Cowrie mounts that same directory with `subPathExpr: $(POD_UID)` at
-  `/cowrie/cowrie-git/var/log/cowrie`. Distinct pod UIDs give every replica,
-  including replacement pods, a distinct persistent directory.
-- The claim binds to its organisation's RWX EFS CSI PV/access point with `Retain`.
-  Pod deletion does not delete the PVC or that pod's EFS directory. Within the
-  access point, the layout is `<pod-uid>/cowrie.json*`.
-- The uploader mounts the **whole same PVC** read-only at `/logs`, without
-  `subPath` or `subPathExpr`. `upload.sh` scans `/logs/*/cowrie.json*` without
-  consulting the Kubernetes pod inventory, so it includes directories belonging
-  to deleted pods. Source logs are never removed by the uploader; the retained
-  cleanup checker only reports candidates and has no automatic workload.
-
-These checks confirm configuration, not actual EFS permissions, runtime writes
-or S3 delivery. The local uploader test uses synthetic current/deleted-pod log
-directories and a stub AWS command; it does not mount EFS or contact AWS.
-
-### Manual scaling and retention test
-
-Run this procedure only after an approved deployment to an isolated test
-environment. Repeat for `orga`, `orgb` and `orgc`, saving timestamps, metrics,
-replica counts, pod UIDs and upload evidence under ignored `.local/` storage.
-Keep the upload CronJob suspended and use a manual Job for the final check.
-Only use decoy SSH credentials and controlled, non-sensitive sessions/logs.
-
-1. **Generate controlled CPU load and observe scale-up.** First let the idle HPA
-   reach one replica; the manifest starts at three, so starting there cannot
-   demonstrate scale-up. Confirm Metrics Server reports CPU and HPA conditions
-   are healthy. In PowerShell, select the test namespace and an existing pod:
+1. **Generate controlled load and observe scale-up.** Let the idle HPA reach one
+   replica first: the Deployment starts at three, so starting there cannot show
+   scale-up. Check metrics/conditions. From an operator terminal run a bounded
+   three-minute CPU load on one Cowrie pod after confirming `python3` is present:
 
    ```powershell
-   $org = 'orga' # Repeat the procedure for orgb and orgc.
-   $pod = (kubectl -n $org get pods -l app=cowrie -o json | ConvertFrom-Json).items[0].metadata.name
-   kubectl -n $org top pods -l app=cowrie
-   # Foreground load, bounded to three minutes; observe from another terminal.
-   kubectl -n $org exec $pod -c cowrie -- python3 -c "import time; end = time.monotonic() + 180; exec('while time.monotonic() < end: pass')"
+   $pod = (python $tool kubectl --org $org -- get pods -l app=cowrie -o json | ConvertFrom-Json).items[0].metadata.name
+   python $tool kubectl --org $org -- exec $pod -c cowrie -- python3 -c "import time; end = time.monotonic() + 180; exec('while time.monotonic() < end: pass')"
    ```
 
-   In a second terminal, run `kubectl -n <org> get hpa cowrie-hpa --watch` and
-   `kubectl -n <org> get pods -l app=cowrie --watch`; sample `kubectl top pods`
-   and record the rise toward three replicas. Verify `python3` exists in the
-   chosen Cowrie image before the test; do not install load tools into live pods.
-   Generate a benign SSH interaction against **each** replica, for example with
-   an operator port-forward to each pod's port 2222. Confirm each pod has a
-   nonempty `cowrie.json` in its mounted log directory. At the high replica count,
-   save the pod/UID inventory before scale-down:
+   In separately initialized terminals observe:
 
    ```powershell
-   New-Item -ItemType Directory -Force .local/cowrie/scaling-test | Out-Null
-   kubectl -n $org get pods -l app=cowrie -o json | Set-Content -Encoding utf8 ".local/cowrie/scaling-test/$org-before.json"
+   python $tool kubectl --org $org -- get hpa cowrie-hpa --watch
+   python $tool kubectl --org $org -- get pods -l app=cowrie --watch
    ```
 
-2. **Stop load and observe CPU usage drop.** The bounded load exits after 180
-   seconds; confirm it has finished, end other test traffic and sample
-   `kubectl -n <org> top pods -l app=cowrie` until CPU stays below the target.
-   CPU utilisation here is relative to the configured `100m` CPU request.
-   Record when low utilisation starts; do not infer session inactivity from it.
-
-3. **Allow stabilization and observe scale-down.** Keep watching for at least
-   the 300-second stabilization window after high recommendations age out, plus
-   metric/controller delay. Expect reductions such as `3 -> 2 -> 1`, with no
-   more than one replica removed per 60 seconds. Save HPA descriptions and events
-   (`kubectl -n <org> describe hpa cowrie-hpa` and
-   `kubectl -n <org> get events --sort-by=.lastTimestamp`) to assess actual timing.
-   If replicas do not shrink, inspect CPU, metric errors, HPA conditions and
-   recent recommendations rather than assuming failure at exactly five minutes.
-   Record which pod UIDs disappeared. An optional low-CPU SSH session may be
-   disconnected if its pod is selected; HPA makes no promise about which active
-   sessions survive.
-
-4. **Verify retained EFS logs and subsequent S3 upload.** After removed pods have
-   terminated, capture the surviving pod UIDs and compare with the saved list:
+   Generate a benign SSH interaction for each replica using a guarded operator
+   port-forward (`python $tool kubectl --org $org -- port-forward pod/<pod-name> 2222:2222`).
+   Confirm each replica has a nonempty `cowrie.json`. At high replica count save:
 
    ```powershell
-   $before = Get-Content -Raw ".local/cowrie/scaling-test/$org-before.json" | ConvertFrom-Json
-   $after = kubectl -n $org get pods -l app=cowrie -o json | ConvertFrom-Json
+   $evidence = ".local/cowrie/scaling-test/$org"
+   New-Item -ItemType Directory -Force $evidence | Out-Null
+   python $tool kubectl --org $org -- get pods -l app=cowrie -o json | Set-Content -Encoding utf8 "$evidence/before.json"
+   ```
+
+2. **Stop load and observe CPU drop.** Confirm the bounded load exited and stop
+   other test traffic. Sample `python $tool kubectl --org $org -- top pods -l app=cowrie`
+   until CPU stays below target. Utilisation is relative to the `100m` request;
+   low CPU says nothing about active sessions. Record timestamps.
+3. **Wait for stabilization and observe scale-down.** Allow high recommendations
+   to age out of the 300-second window plus metric/controller delay. Expect
+   `3 -> 2 -> 1`, with no more than one replica removed per 60 seconds. Record
+   `python $tool kubectl --org $org -- describe hpa cowrie-hpa` and
+   `python $tool kubectl --org $org -- get events --sort-by=.lastTimestamp`.
+   Inspect missing metrics/recommendations if it does not shrink; five minutes
+   is not an exact deadline. Do not reapply the Deployment during measurement:
+   its `replicas: 3` can reset the HPA-managed count. Record disconnected sessions.
+4. **Verify retained EFS logs and subsequent upload.** After termination, compare
+   pod UIDs with the saved inventory and run a manual uploader Job:
+
+   ```powershell
+   $before = Get-Content -Raw "$evidence/before.json" | ConvertFrom-Json
+   $after = python $tool kubectl --org $org -- get pods -l app=cowrie -o json | ConvertFrom-Json
    $removed = @($before.items.metadata.uid | Where-Object { $_ -notin $after.items.metadata.uid })
    $removed
    $job = 'cowrie-retention-' + (Get-Date -Format 'yyyyMMddHHmmss')
-   kubectl -n $org create job --from=cronjob/cowrie-logs-to-s3 $job
-   kubectl -n $org wait --for=condition=complete "job/$job" --timeout=3600s
-   kubectl -n $org logs "job/$job"
+   python $tool kubectl --org $org -- create job --from=cronjob/cowrie-logs-to-s3 $job
+   python $tool kubectl --org $org -- wait --for=condition=complete "job/$job" --timeout=3600s
+   python $tool kubectl --org $org -- logs "job/$job"
    ```
 
-   Require at least one removed UID and an `Uploaded:` entry for that UID's real
-   `cowrie.json` file. A successful manual Job executed after deletion confirms
-   its uploader could still read that directory through EFS. With an operator
-   identity, list the expected S3 prefix, confirm object names contain the removed
-   UID, and inspect the uploaded benign events/content; uploader roles cannot
-   read objects. Check surviving pods' logs too. Preserve the before/after
-   inventory, upload output and object evidence locally; a Job success alone
-   could mean it uploaded only surviving pods' logs. Remove the test Job after
-   reviewing evidence, leaving the EFS source directories and CronJob suspension
-   intact. Do not treat retained files as proof that termination lost no buffered
-   events; compare the expected test events separately.
+   Require at least one removed UID and `Uploaded:` output for its real log file.
+   Verify the S3 object name includes that UID and its content contains the expected
+   benign events. A successful Job might upload only surviving pods' files, so
+   check removed UIDs explicitly. Confirm surviving logs too; retention does not
+   prove that no buffered event was lost. Remove the test Job with
+   `python $tool kubectl --org $org -- delete job $job` after reviewing evidence.
+   Keep EFS source directories and the CronJob suspension intact.
 
 ## Cleanup
 
-Suspend upload scheduling first, remove SSH Services to stop exposure, and wait
-for their NLBs/target groups to be removed. Stop/finish manual upload Jobs, verify
-required logs exist in S3, then delete workloads and local Secret objects. Commands
-below assume these namespaces belong solely to this setup; inspect ownership first.
+Initialize the explicit `$org`, `$tool` and `$rendered` target for the cluster being
+retired. Suspend scheduling first; stop/finish manual Jobs and verify required
+archives. Remove Services and wait for their NLBs/targets to disappear, then remove
+workloads/configuration/Secrets owned by this installation:
 
 ```powershell
-foreach ($org in @('orga','orgb','orgc')) {
-  kubectl -n $org patch cronjob cowrie-logs-to-s3 --type=merge -p '{"spec":{"suspend":true}}'
-}
-kubectl delete -f .local/cowrie/rendered/services.yaml
-kubectl delete -f .local/cowrie/rendered/workloads.yaml
-# Remove any manual validation Jobs separately after reviewing their results.
-kubectl delete -f .local/cowrie/rendered/configuration.yaml
-Get-ChildItem .local/cowrie/secrets -Filter *.secret.yaml | ForEach-Object { kubectl delete -f $_.FullName }
+$suspendPatch = ".local/cowrie/$org-suspend.json"
+@{spec = @{suspend = $true}} | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 $suspendPatch
+python $tool kubectl --org $org -- patch cronjob cowrie-logs-to-s3 --type=merge --patch-file $suspendPatch
+python $tool kubectl --org $org -- delete -f "$rendered/services.yaml"
+python $tool kubectl --org $org -- delete -f "$rendered/workloads.yaml"
+python $tool kubectl --org $org -- delete -f "$rendered/configuration.yaml"
+Get-ChildItem ".local/cowrie/secrets/$org" -Filter *.secret.yaml | ForEach-Object { python $tool kubectl --org $org -- delete -f $_.FullName }
 ```
 
-Only after pods/jobs have released claims, delete PVCs and then PV objects from
-`storage.yaml` if retiring this installation. `Retain` keeps EFS data; deleting PVs,
-PVCs or namespaces does not erase EFS content or the S3 archive. Namespace deletion
-also deletes unrelated resources inside it, so remove namespaces only after an
-ownership review. Retire Pod Identity associations/IAM and any dedicated NLB/network
-resources through the infrastructure owner. EFS access points, filesystems, bucket
-objects and KMS keys need separate deliberate retention/deletion decisions.
+Only after every pod/Job releases storage, delete the selected PVC and then PV
+objects if deliberately retiring them. `Retain` keeps EFS data; EFS access points,
+filesystems, S3 contents, IAM associations/roles and KMS keys have separate owner
+retention/deletion decisions. **Never delete the `default` namespace.** Do not
+recreate/delete clusters as part of this repository migration. Retire infrastructure
+through its owner's stack and protect/dispose of local key material appropriately.
 
-Keep local Secret/key material protected or securely dispose of it after retirement.
-Keep original recovery backups intact. `.gitignore` excludes `.local/`, backup
-exports, credentials, PEM/private keys and generated Secret files, but does not
-protect files already tracked or force-added. Before publishing, review
-`git diff --check`, `git diff`, `git ls-files --others --exclude-standard` and run
-a sensitive-content scan that includes new files. Never stage raw recovery JSON.
+Backups remain intact. AWS `describe-*.json`, EKS/EFS/addon/access/identity exports
+are reference snapshots, not deployable infrastructure or create-request inputs.
+Do not copy them or decoded/base64 Secret data into Git. Existing ignore rules
+exclude local configuration, credentials, backups and generated Secrets. Review
+tracked and new files for sensitive content before any future publication.
 
-References: [Kubernetes HPA behavior](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/),
-[EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html),
-[EFS prerequisites](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html),
-[EKS NLB annotations](https://docs.aws.amazon.com/eks/latest/userguide/auto-configure-nlb.html).
+References: [HPA behavior](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/),
+[Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html),
+[context aliases](https://docs.aws.amazon.com/cli/latest/reference/eks/update-kubeconfig.html),
+[EFS prerequisites](https://docs.aws.amazon.com/eks/latest/userguide/efs-csi.html).

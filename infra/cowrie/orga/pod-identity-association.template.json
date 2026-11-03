@@ -1,0 +1,6 @@
+{
+  "clusterName": "orga-honeypot-cluster",
+  "namespace": "default",
+  "serviceAccount": "cowrie-log-uploader",
+  "roleArn": "arn:aws:iam::REPLACE_AWS_ACCOUNT_ID:role/REPLACE_UPLOADER_ROLE_ORGA"
+}

@@ -21,7 +21,7 @@ spec:
             - name: ORG
               valueFrom:
                 fieldRef:
-                  fieldPath: metadata.namespace
+                  fieldPath: metadata.labels['organisation']
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 configMapKeyRef:

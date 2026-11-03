@@ -7,7 +7,8 @@ Secrets, prerequisites, validation and cleanup.
   backed-up `orga-lab`, `orgb-lab` and `orgc-lab` hostnames.
 - `upload.sh` preserves the backup's per-pod log upload layout and symlink/test-file
   exclusions. Bucket and region come from `cowrie-upload-settings`; organisation
-  comes from the pod namespace. It never deletes source logs.
+  comes from the pod organisation label, independently of namespace. It never
+  deletes source logs.
 - `cleanup.py` is the backed-up **dry-run** retention checker. It prints candidates
   only and is packaged as `efs-cleanup-check`; no workload runs it automatically.
 - `kustomization.yaml` generates ConfigMaps with content hashes. Kustomize updates
@@ -18,7 +19,8 @@ Secrets, prerequisites, validation and cleanup.
 The Deployment retains the backed-up Cowrie image digest, resource limits,
 UID-based EFS log directories, Secret mounts and disabled service-account token
 mounting. Host keys are shared by replicas within one organisation and generated
-separately for each organisation. Keep decoy passwords separate from real accounts.
+separately for each organisation. Each organisation now has its own EKS cluster
+using the default namespace. Keep decoy passwords separate from real accounts.
 
 Each replica writes to its own pod-UID subdirectory on the EFS PVC. The uploader
 reads the entire same claim, including directories left by deleted pods, and does

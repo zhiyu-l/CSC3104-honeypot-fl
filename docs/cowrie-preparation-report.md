@@ -1,104 +1,65 @@
-# Cowrie GitHub preparation report
+# Cowrie configuration and architecture report
 
-Prepared 3 November 2026. Preparation and validation did not deploy AWS or
-Kubernetes resources. GitHub publication is separate from deployment.
-The initial repository had only placeholders in
-the relevant implementation folders. Existing unrelated files were preserved.
+Updated 3 November 2026. The configuration now targets three separate EKS clusters:
+`orga-honeypot-cluster`, `orgb-honeypot-cluster` and `orgc-honeypot-cluster`, each
+using `default`. This supersedes the old shared-cluster namespace deployment.
+Preparation did not provision or deploy resources; GitHub publication is separate
+from deployment.
+The original recovery backups remain unchanged outside the repository.
 
-The HPA was subsequently updated for all three organisations to support automatic
-scale-down: a 300-second stabilization window, `selectPolicy: Min` and a maximum
-of one pod removed per 60 seconds. Replica bounds, CPU target and scale-up settings
-are unchanged. The previously tested recovery configuration supported scale-up
-only; **this new scale-down configuration has not been tested on a live cluster**.
+## Changes in this migration
 
-## Changed files
+- Removed `deploy/k8s/overlays/aws/cowrie/kustomization.yaml` (the aggregate target)
+  and all three `*/namespace.yaml` files. Each overlay now targets `default`;
+  static PV claim reservations are `default/cowrie-logs`.
+- Updated `deploy/k8s/base/cowrie/upload-cronjob.yaml` to take `ORG` from the
+  organisation pod label. S3 prefixes remain orga/orgb/orgc even in `default`.
+- Updated `deploy/k8s/cowrie_config.py` for independent builds/validation/rendering,
+  per-cluster target metadata, explicit kubectl contexts, kubeconfig ARN checks,
+  namespace/override checks and rejection of another organisation's manifests.
+- Updated `settings.example.json` with fixed cluster/context names and cluster ARN
+  placeholders. EFS access points and uploader roles remain distinct.
+- Added `infra/cowrie/{orga,orgb,orgc}/pod-identity-association.template.json`;
+  updated common trust to `default` with exact cluster-ARN restriction. Rendering
+  creates matching per-cluster association/trust/upload-policy JSON locally.
+- Updated Secret examples, README, deployment/infrastructure/service guides and
+  added an architecture decision record. Added offline boundary regression tests
+  in `deploy/k8s/tests/test_cowrie_config.py`.
+- HPA behavior is unchanged from the already prepared scale-down version: min/max
+  1/3, CPU 60%, existing scale-up `Max` and zero stabilization, scale-down `Min`
+  with 300-second stabilization and one pod per 60 seconds. CronJobs stay suspended.
 
-Modified: `.gitignore`, `README.md`.
+## Validation
 
-Removed placeholder files: `deploy/k8s/base/.gitkeep`,
-`deploy/k8s/overlays/aws/.gitkeep`, `infra/.gitkeep`, `services/cowrie/.gitkeep`.
+- Independent Kustomize builds: **33 resources, 11 per cluster**, no Namespace
+  resources, all namespaced resources in `default`, organisation labels retained.
+- Resource identities/references, hashed ConfigMaps, service-account/PVC mounts,
+  selectors/ports, PV reservations, HPA and CronJob policy checked locally.
+- Official Kubernetes v1.37.0 structural schema checks, with IntOrString handling.
+- Synthetic rendering and per-cluster Pod Identity/trust/S3-prefix checks outside
+  the repo. No real local settings, private keys or Secrets generated.
+- All 13 offline regression tests passed, covering correct context injection, wrong context ARN,
+  namespace/cluster overrides, old namespace/claim/uploader identity, mixed
+  manifests, shared roles, foreign file paths and stale/tampered target outputs.
+  Operational subprocesses are mocked; real kubectl calls only perform local
+  Kustomize builds with an explicit context/default namespace.
+- UID-based EFS directories and full-root read-only uploader mounts remain checked.
+  Local synthetic uploads include current/deleted-pod logs and retain source files.
+- YAML duplicate-key parsing, JSON/Python/INI/shell checks, sensitive-content scan,
+  ignore coverage, whitespace and recovery SHA-256 checks are included in the
+  final local review. Backups are preserved; preparation left the Git index/HEAD
+  unchanged before publication.
 
-Added:
+## Live checks still required
 
-```text
-.gitattributes  (preserves LF for the ConfigMap-mounted shell script on Windows)
-deploy/k8s/
-  cowrie-requirements.txt
-  cowrie_config.py
-  base/cowrie/
-    deployment.yaml
-    hpa.yaml
-    kustomization.yaml
-    pvc.yaml
-    upload-cronjob.yaml
-    uploader-serviceaccount.yaml
-  overlays/aws/cowrie/
-    README.md
-    kustomization.yaml
-    settings.example.json
-    orga/  (all seven files below)
-    orgb/  (all seven files below)
-    orgc/  (all seven files below)
-      config.patch.yaml
-      kustomization.yaml
-      namespace.yaml
-      pv.template.yaml
-      pvc.patch.yaml
-      service.template.yaml
-      upload-settings.template.yaml
-docs/
-  cowrie-kubernetes.md
-  cowrie-preparation-report.md
-infra/cowrie/
-  README.md
-  pod-identity-trust.template.json
-  uploader-policy.template.json
-services/cowrie/
-  README.md
-  cleanup.py
-  cowrie.cfg
-  kustomization.yaml
-  secrets.example.yaml
-  upload.sh
-  userdb.example.txt
-```
+The previously tested recovery configuration supported scale-up only. The new
+three-cluster deployment and automatic scale-down have **not been tested live**.
+Verify each actual EKS ARN/context, operator access, add-ons, IAM/Pod Identity,
+EFS writes/permissions/binding/retention, metrics, network isolation, NLB filtering
+and S3 delivery. HPA does not check active SSH sessions; scale-down can disconnect
+them and does not guarantee all buffered log events are flushed.
 
-## Checks performed
-
-- Kustomize builds and reference validation passed for 36 resources across all
-  three namespaces. ConfigMap hashes/references, namespace ownership, volume
-  mounts, service accounts, PV/PVC reservations, selectors and ports were checked.
-- Source YAML parsed with duplicate-key rejection; JSON, Python syntax and Cowrie
-  INI parsed successfully. The uploader shell script passed Bash syntax checking.
-- All 36 resources passed offline structural validation against the official
-  Kubernetes `v1.37.0` OpenAPI schema, with `IntOrString` normalization.
-- Synthetic settings rendered successfully in a temporary directory and the
-  output passed validation. No real local settings or Secrets were generated.
-- Negative checks rejected unresolved placeholders, shared EFS access points,
-  unrestricted CIDRs, stale claim UIDs and missing ConfigMaps. Updated checks
-  rejected disabled/faster scale-down, changed scale-up, shared replica log
-  directories, a pod-specific uploader subpath and a different uploader claim.
-  They require the exact new scale-down policy and unchanged scale-up settings.
-- HPA replica bounds, CPU target and scale-up settings, Deployment replica counts,
-  Cowrie/cleanup ConfigMap contents and functional Service annotations were
-  compared with the backups. Only the requested HPA scale-down behavior changed.
-- Every organisation's manifest was checked for pod-UID EFS directories, directory
-  creation on the same claim and a full-root read-only mount for the uploader.
-  Local uploader execution with synthetic current/deleted-pod directories and a
-  stub AWS command verified both are copied without removing source logs.
-- Publishable files were checked against the encoded and decoded backup Secret
-  values, private-key/AWS-key/token patterns and the source environment's AWS IDs,
-  account IDs, source IPs, bucket and cluster name. No matches were found.
-- Ignore rules covered local settings, generated Secrets, AWS/kube credentials,
-  SSH/PEM keys, environment files and backup exports; examples remain publishable.
-- `git diff --check` passed. SHA-256 hashes of all 40 original recovery files
-  matched the pre-extraction inventory.
-
-These are offline checks, not proof of runtime behavior. A live cluster is still
-needed for admission/server dry runs, PVC binding and EFS access, pod startup and
-SSH behavior, HPA metrics/scaling, Pod Identity/IAM, S3 uploads, isolation and NLB
-source filtering. HPA scale-down is enabled in the templates but untested live;
-upload CronJobs remain suspended. CPU-based HPA does not check active SSH sessions
-and can disconnect them during scale-down. See [the deployment guide](cowrie-kubernetes.md)
-for prerequisites, deployment order, validation, activation, cleanup and the manual
-load/scale-up, idle/scale-down, EFS retention and subsequent S3 upload test.
+Use [the deployment guide](cowrie-kubernetes.md) for explicit targets, migration
+order, local Secrets, manual load/scale-up and idle/scale-down tests, retained
+EFS-log/upload verification and cleanup. Never delete the `default` namespace or
+replay AWS describe-output snapshots as deployable infrastructure.
