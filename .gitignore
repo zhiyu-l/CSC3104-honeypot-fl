@@ -24,3 +24,54 @@ Thumbs.db
 
 # Secrets
 .env
+.env.*
+!.env.example
+.aws/
+.kube/
+kubeconfig*
+credentials
+credentials.*
+*.pem
+*.key
+id_rsa*
+id_ecdsa*
+id_ed25519*
+ssh_host_*_key*
+userdb.txt
+
+# Machine-specific configuration, generated Secrets and rendered manifests
+.local/
+secrets/
+*.secret.yaml
+*.secret.yml
+*.secret.json
+*-secrets.yaml
+*-secrets.yml
+*-secrets.json
+secret.yaml
+secret.yml
+secret.json
+secrets.yaml
+secrets.yml
+secrets.json
+*-secret.yaml
+*-secret.yml
+*-secret.json
+
+# Recovery snapshots must remain outside version control (they contain Secrets)
+**/EKS backup/
+**/backup/
+**/backups/
+local-backups/
+recovery-backups/
+cowrie-recovery-*/
+*-resources.json
+*-pods-inventory.json
+cluster-rbac.json
+cluster-storage.json
+describe-*.json
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/

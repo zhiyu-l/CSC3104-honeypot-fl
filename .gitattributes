@@ -1,0 +1,2 @@
+# Keep the ConfigMap-mounted uploader executable by /bin/sh after Windows checkouts.
+services/cowrie/*.sh text eol=lf

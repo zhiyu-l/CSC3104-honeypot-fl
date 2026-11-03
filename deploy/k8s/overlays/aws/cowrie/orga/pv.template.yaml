@@ -1,0 +1,23 @@
+# TEMPLATE: render with deploy/k8s/cowrie_config.py before applying.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: cowrie-logs-orga
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: 5Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    namespace: orga
+    name: cowrie-logs
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: REPLACE_EFS_FILESYSTEM_ID::REPLACE_EFS_ACCESS_POINT_ORGA
+  mountOptions:
+  - tls
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  storageClassName: ''

@@ -64,6 +64,9 @@ GitHub Actions pipelines: linting, tests, building Docker images and pushing the
 
 ## Rules for the repo
 
+Cowrie Kubernetes setup: [deployment and recovery guide](docs/cowrie-kubernetes.md).
+The AWS Cowrie overlays are templates; render local settings before applying them.
+
 - Never commit secrets, `.env` files, AWS keys, Cowrie logs, datasets or model checkpoints.
 - Do not push directly to `main`; open a pull request from a feature branch.
 - Remove a folder's `.gitkeep` once real files are added to it.
