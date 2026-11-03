@@ -1,5 +1,10 @@
 # Cowrie configuration and architecture report
 
+Scope: historical EKS preparation report. Later local kind configuration and
+manual upload results are documented in [the local guide](cowrie-local.md).
+The current shared uploader uses stable `raw/by-pod/` keys; see
+[the ML handoff](cowrie-ml-handoff.md). This report is not a current live-state audit.
+
 Updated 3 November 2026. The configuration now targets three separate EKS clusters:
 `orga-honeypot-cluster`, `orgb-honeypot-cluster` and `orgc-honeypot-cluster`, each
 using `default`. This supersedes the old shared-cluster namespace deployment.

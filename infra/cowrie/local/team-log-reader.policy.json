@@ -1,0 +1,30 @@
+{
+    "Version":  "2012-10-17",
+    "Statement":  [
+                      {
+                          "Effect":  "Allow",
+                          "Sid":  "ListProjectBuckets",
+                          "Resource":  [
+                                           "arn:aws:s3:::csc3104-cowrie-orga",
+                                           "arn:aws:s3:::csc3104-cowrie-orgb",
+                                           "arn:aws:s3:::csc3104-cowrie-orgc"
+                                       ],
+                          "Action":  [
+                                         "s3:ListBucket",
+                                         "s3:GetBucketLocation"
+                                     ]
+                      },
+                      {
+                          "Effect":  "Allow",
+                          "Sid":  "ReadProjectLogs",
+                          "Resource":  [
+                                           "arn:aws:s3:::csc3104-cowrie-orga/orga/raw/*",
+                                           "arn:aws:s3:::csc3104-cowrie-orgb/orgb/raw/*",
+                                           "arn:aws:s3:::csc3104-cowrie-orgc/orgc/raw/*"
+                                       ],
+                          "Action":  [
+                                         "s3:GetObject"
+                                     ]
+                      }
+                  ]
+}

@@ -29,11 +29,6 @@ spec:
                   key: AWS_DEFAULT_REGION
             - name: AWS_EC2_METADATA_DISABLED
               value: 'true'
-            - name: UPLOAD_POD_UID
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.uid
             - name: S3_BUCKET
               valueFrom:
                 configMapKeyRef:

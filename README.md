@@ -65,6 +65,8 @@ GitHub Actions pipelines: linting, tests, building Docker images and pushing the
 ## Rules for the repo
 
 Cowrie Kubernetes setup: [deployment and recovery guide](docs/cowrie-kubernetes.md).
+Local development: [three kind clusters, storage, autoscaling and S3 uploads](docs/cowrie-local.md).
+ML team: [S3 access, current data paths and duplicate-handling contract](docs/cowrie-ml-handoff.md).
 Cowrie configuration targets three separate EKS clusters (`orga-honeypot-cluster`,
 `orgb-honeypot-cluster`, `orgc-honeypot-cluster`), each using `default`.
 The AWS Cowrie overlays are independent templates; render local settings and use

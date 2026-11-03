@@ -199,7 +199,7 @@ class ClusterBoundaries(unittest.TestCase):
         stub = '''aws() {
  case "$1 $2" in
    "sts get-caller-identity") printf '{}\\n' ;;
-   "s3 cp") printf '%s\\n' "$4" >> "$AUDIT"; cp "$3" "$CAPTURE_DIR/${4##*/}" ;;
+   "s3 cp") printf '%s\\n' "$4" >> "$AUDIT"; key=${4#*/raw/by-pod/}; mkdir -p "$CAPTURE_DIR/$(dirname "$key")"; cp "$3" "$CAPTURE_DIR/$key" ;;
    *) return 99 ;;
  esac
 }
@@ -215,15 +215,33 @@ class ClusterBoundaries(unittest.TestCase):
             capture.mkdir()
             audit = self.local / f"{org}-audit.txt"
             environment = dict(os.environ, ORG=identity, S3_BUCKET="cowrie-example-bucket",
-                UPLOAD_POD_UID="uploader-test-uid", TEST_LOG_ROOT=logs.as_posix(),
+                TEST_LOG_ROOT=logs.as_posix(),
                 CAPTURE_DIR=capture.as_posix(), AUDIT=audit.as_posix())
             result = subprocess.run([shell, path.as_posix()], env=environment, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             objects = audit.read_text().splitlines()
             self.assertEqual(len(objects), 2)
-            self.assertTrue(all(f"/{org}/raw/" in name and "/default/raw/" not in name for name in objects))
-            self.assertTrue(any("deleted-pod-uid_cowrie.json" in name for name in objects))
-            self.assertEqual(len(list(capture.iterdir())), 2)
+            expected = {
+                f"s3://cowrie-example-bucket/{org}/raw/by-pod/{uid}/cowrie.json"
+                for uid in ("current-pod-uid", "deleted-pod-uid")
+            }
+            self.assertEqual(set(objects), expected)
+            self.assertEqual(len(list(capture.rglob('cowrie.json'))), 2)
+            # A second run uses the same keys, including logs from removed pods.
+            repeated = subprocess.run([shell, path.as_posix()], env=environment, capture_output=True, text=True)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(audit.read_text().splitlines(), objects + objects)
+            # Appended events replace the captured object rather than create a new key.
+            active = logs / "current-pod-uid/cowrie.json"
+            original = active.read_bytes()
+            active.write_bytes(original + b'\n{"eventid":"cowrie.command.input","input":"ls"}\n')
+            changed = subprocess.run([shell, path.as_posix()], env=environment, capture_output=True, text=True)
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            self.assertEqual(set(audit.read_text().splitlines()), expected)
+            self.assertEqual((capture / "current-pod-uid/cowrie.json").read_bytes(), active.read_bytes())
+            self.assertEqual((capture / "deleted-pod-uid/cowrie.json").read_bytes(), (logs / "deleted-pod-uid/cowrie.json").read_bytes())
+            self.assertEqual(len(list(capture.rglob('cowrie.json'))), 2)
+            active.write_bytes(original)
         self.assertEqual(before, {str(p.relative_to(logs)): p.read_bytes() for p in logs.rglob("*") if p.is_file()})
 
 

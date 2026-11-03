@@ -284,11 +284,15 @@ python $tool kubectl --org $org -- logs "job/$job"
 ```
 
 Generate benign logs first. Verify STS identity and objects under
-`s3://<bucket>/<org>/raw/<UTC-date>/`. Names include upload timestamp, uploader UID,
-source pod UID and original filename. Uploads skip symlinks/pipeline-test files,
+`s3://<bucket>/<org>/raw/by-pod/<source-pod-uid>/<original-filename>`.
+The shared uploader now overwrites stable keys rather than creating dated snapshots.
+This affects AWS on the next render/apply; it does not migrate existing S3 objects.
+Existing `<org>/raw/*` policy resources cover the new layout. Uploads skip symlinks/pipeline-test files,
 fail on no matches, include active/rotated files and never delete source logs.
 Active files may change during copying; uploads are not a consistent snapshot or
-deduplicated archive. Operator credentials must verify contents because uploader
+deduplicated archive. Keep old dated snapshots out of the current ML input prefix;
+see [the handoff](cowrie-ml-handoff.md) for rotation and overwrite semantics.
+Operator credentials must verify contents because uploader
 roles cannot read/delete objects. Do not approve EFS deletion from copy success.
 
 Enable scheduling only after live validation in a reviewed source change (and
@@ -301,7 +305,8 @@ may immediately schedule a missed run within its start deadline.
 
 The historical recovery baseline tested scale-up only (`scaleDown: Disabled`).
 The repository now enables **both directions in all three cluster overlays**;
-scale-down and this three-cluster architecture are **untested on a live cluster**.
+scale-down and this three-cluster architecture are **not yet verified on EKS**.
+Local kind evidence is recorded separately in [the local guide](cowrie-local.md).
 Min/max replicas remain 1/3 and CPU target 60%. Scale-up retains `Max` of four
 pods or 100% per 15 seconds and zero stabilization. Scale-down uses:
 

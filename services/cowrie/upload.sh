@@ -2,7 +2,6 @@ set -eu
 
 : "${ORG:?ORG is required}"
 : "${S3_BUCKET:?S3_BUCKET is required}"
-: "${UPLOAD_POD_UID:?UPLOAD_POD_UID is required}"
 
 case "$ORG" in
   orga|orgb|orgc) ;;
@@ -11,12 +10,9 @@ esac
 
 aws sts get-caller-identity
 
-# Use UTC consistently for the folder and upload timestamp.
-STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
-UPLOAD_DATE=${STAMP%%T*}
-RUN_ID="${STAMP}-${UPLOAD_POD_UID}"
-DEST="s3://${S3_BUCKET}/${ORG}/raw/${UPLOAD_DATE}"
-
+# Stable keys isolate this layout from legacy dated snapshots. Repeated uploads
+# overwrite the same object; this does not deduplicate events across log rotation.
+DEST="s3://${S3_BUCKET}/${ORG}/raw/by-pod"
 COUNT=0
 
 for POD_DIR in /logs/*; do
@@ -31,12 +27,11 @@ for POD_DIR in /logs/*; do
 
     ORIGINAL_NAME=${FILE##*/}
 
-    # Exclude the synthetic pipeline test file.
     case "$ORIGINAL_NAME" in
       cowrie.json.pipeline-test*) continue ;;
     esac
 
-    OBJECT_NAME="${RUN_ID}_${SOURCE_POD_UID}_${ORIGINAL_NAME}"
+    OBJECT_NAME="${SOURCE_POD_UID}/${ORIGINAL_NAME}"
 
     aws s3 cp "$FILE" "${DEST}/${OBJECT_NAME}" \
       --no-follow-symlinks \

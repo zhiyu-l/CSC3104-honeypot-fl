@@ -1,6 +1,9 @@
 # 0001: Separate Cowrie clusters per organisation
 
-Status: accepted configuration; not deployed. Date: 3 November 2026.
+Status: accepted AWS target configuration; EKS deployment not verified. Date: 3 November 2026.
+
+Subsequent local kind deployment and S3 upload evidence is recorded in
+[the local guide](../cowrie-local.md); it does not establish an EKS deployment.
 
 The recovery baseline placed orga, orgb and orgc in namespaces on one EKS cluster.
 The target architecture uses `orga-honeypot-cluster`, `orgb-honeypot-cluster` and
@@ -21,6 +24,6 @@ isolation, IAM enforcement and data cutover still need infrastructure-owner revi
 No cluster creation/deletion or existing installation migration is performed by
 this repository change. Backups remain immutable reference snapshots.
 
-Both HPA scaling directions are configured; live scale-down and the three-cluster
-architecture remain untested. CPU HPA does not inspect SSH session activity.
+Both HPA scaling directions are configured; EKS scale-down and the three-cluster
+architecture still require live verification. CPU HPA does not inspect SSH session activity.
 See [the guide](../cowrie-kubernetes.md) for validation and migration procedures.
