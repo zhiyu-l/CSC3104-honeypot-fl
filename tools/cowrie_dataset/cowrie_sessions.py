@@ -18,7 +18,7 @@ Sessions that are not attacks we classify are kept in the CSV with label
 port-forwarding), so they can be counted and then excluded from training.
 
 FEATURES and the label rules must match libs/fl-common/src/fl_common/schema.py
-(FEATURE_NAMES and label_session); keep them in sync when changing either.
+(FEATURE_NAMES and label_session). libs/fl-common/tests checks that they do.
 """
 
 from __future__ import annotations
