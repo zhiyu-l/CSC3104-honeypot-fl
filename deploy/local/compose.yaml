@@ -1,5 +1,5 @@
 # Local stack: 1 coordinator (SuperLink) + 3 org clients (SuperNodes).
-# Ported from prototypes/andrew-flower/flower-docker/compose.yaml.
+# Ported from Andrew's Flower prototype (`andrew` branch).
 #
 #   docker compose -f deploy/local/compose.yaml up --build -d
 #   cd deploy/flower-app && flwr run . local-deployment --stream

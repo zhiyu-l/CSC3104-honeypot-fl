@@ -4,7 +4,7 @@ Runs one coordinator (SuperLink) and three org clients (SuperNodes) that train t
 `HoneypotMLP` model with fault tolerance (quorum, retries, rejection of stale, duplicate
 and bad updates). By default the clients train on synthetic sessions from
 `libs/fl-common`; to train on the real Kaggle Cowrie split, see "Training on real data"
-in step 5.
+in step 4.
 
 For how the system works internally, see `docs/how-it-works.md`.
 
@@ -33,7 +33,7 @@ Docker Desktop and wait for it to start.
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -e "libs/fl-common[dev]" -e "services/client[dev]" -e "services/coordinator[dev]"
+pip install -e libs/fl-common -e services/client -e services/coordinator
 flwr --version
 ```
 
@@ -49,17 +49,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Do not install the root `requirements.txt`; it pins an older Flower version.
 
-## 3. Run the tests (optional, recommended)
-
-```powershell
-pytest libs/fl-common
-pytest services/client
-pytest services/coordinator
-```
-
-All tests should pass.
-
-## 4. Configure the Flower connection (once)
+## 3. Configure the Flower connection (once)
 
 ```powershell
 flwr config list
@@ -75,7 +65,7 @@ insecure = true
 
 This connection is for local testing only (no TLS).
 
-## 5. Build and start the containers
+## 4. Build and start the containers
 
 ```powershell
 docker compose -f deploy/local/compose.yaml up --build -d
@@ -115,7 +105,7 @@ docker compose -f deploy/local/compose.yaml -f deploy/local/compose.real-data.ya
 Each SuperNode gets only its own org's CSV, mounted read-only. Use the same two `-f`
 flags for `ps`, `logs` and `down`.
 
-## 6. Run training
+## 5. Run training
 
 ```powershell
 cd deploy/flower-app
@@ -155,7 +145,7 @@ flwr run . local-deployment --stream --run-config "fail-prob=0.0 num-server-roun
 | `local-epochs`, `lr`, `batch-size` | 3, 0.01, 64 | local training settings |
 | `save-model` | false | save the final model to `final_model.npz` |
 
-## 7. Logs and shutdown
+## 6. Logs and shutdown
 
 From the repo root:
 
@@ -165,7 +155,7 @@ docker compose -f deploy/local/compose.yaml logs supernode-a --tail=50
 docker compose -f deploy/local/compose.yaml down
 ```
 
-To run training again while the containers are up, repeat step 6.
+To run training again while the containers are up, repeat step 5.
 
 ## Running without Docker (optional)
 
@@ -186,17 +176,14 @@ $env:FL_ORG_ID="org-b"; flower-supernode --insecure --superlink 127.0.0.1:8000 -
 $env:FL_ORG_ID="org-c"; flower-supernode --insecure --superlink 127.0.0.1:8000 --host 127.0.0.1 --port 9096 --isolation subprocess --node-config "org-index=2"
 ```
 
-Then run step 6 from a fifth window. Stop the containers first
+Then run step 5 from a fifth window. Stop the containers first
 (`docker compose -f deploy/local/compose.yaml down`), since both use port 8000.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| `flwr run` cannot connect | Check the containers are up (`ps` in step 5) and the `config.toml` block in step 4 |
+| `flwr run` cannot connect | Check the containers are up (`ps` in step 4) and the `config.toml` block in step 3 |
 | Run waits forever at `configure_train` | Fewer than `quorum` SuperNodes are connected; check `docker compose ... ps` and logs |
 | Code change has no effect in Docker | Rebuild: `docker compose -f deploy/local/compose.yaml up --build -d` |
 | Port 8000 already in use | Stop the other SuperLink (Docker or local process) |
-
-The original prototype setup lives in `prototypes/andrew-flower/` for reference only and
-is no longer used.

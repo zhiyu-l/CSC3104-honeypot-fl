@@ -14,11 +14,5 @@ dependencies = [
     "torch>=2.2",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/fl_client"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
