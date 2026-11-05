@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {"Service": "pods.eks.amazonaws.com"},
+      "Action": ["sts:AssumeRole", "sts:TagSession"],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/kubernetes-namespace": "default",
+          "aws:RequestTag/kubernetes-service-account": "cowrie-log-uploader",
+          "aws:RequestTag/eks-cluster-arn": "arn:REPLACE_AWS_PARTITION:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/REPLACE_CLUSTER_NAME"
+        }
+      }
+    }
+  ]
+}

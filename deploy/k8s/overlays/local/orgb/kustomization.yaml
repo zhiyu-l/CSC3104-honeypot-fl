@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+resources:
+- ../cowrie
+patches:
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: cowrie-local
+- path: upload.patch.yaml
+configMapGenerator:
+- name: cowrie-config
+  behavior: merge
+  files:
+  - cowrie.cfg
+- name: cowrie-upload-settings
+  literals:
+  - AWS_DEFAULT_REGION=ap-southeast-1
+  - S3_BUCKET=csc3104-cowrie-orgb

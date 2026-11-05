@@ -1,0 +1,14 @@
+{
+    "Version":  "2012-10-17",
+    "Statement":  [
+                      {
+                          "Effect":  "Allow",
+                          "Sid":  "UploadOrganisationLogs",
+                          "Resource":  "arn:aws:s3:::csc3104-cowrie-orgc/orgc/raw/*",
+                          "Action":  [
+                                         "s3:PutObject",
+                                         "s3:AbortMultipartUpload"
+                                     ]
+                      }
+                  ]
+}

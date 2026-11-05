@@ -1,0 +1,8 @@
+# TEMPLATE: render with deploy/k8s/cowrie_config.py before applying.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cowrie-upload-settings
+data:
+  AWS_DEFAULT_REGION: REPLACE_AWS_REGION
+  S3_BUCKET: REPLACE_S3_BUCKET

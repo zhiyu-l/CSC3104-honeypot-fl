@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UploadOrganisationLogs",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:AbortMultipartUpload"],
+      "Resource": "arn:REPLACE_AWS_PARTITION:s3:::REPLACE_S3_BUCKET/REPLACE_ORGANISATION/raw/*"
+    }
+  ]
+}

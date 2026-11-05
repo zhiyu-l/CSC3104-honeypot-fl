@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../../../services/cowrie
+- deployment.yaml
+- hpa.yaml
+- pvc.yaml
+- uploader-serviceaccount.yaml
+- upload-cronjob.yaml

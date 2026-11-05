@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cowrie-logs-to-s3
+spec:
+  schedule: "0 0 * * *"
+  timeZone: Asia/Singapore
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            organisation: orgc
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - name: uploader
+            envFrom:
+            - secretRef:
+                name: cowrie-aws-credentials

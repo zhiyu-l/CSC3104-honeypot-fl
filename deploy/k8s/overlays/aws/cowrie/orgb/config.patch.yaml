@@ -1,0 +1,19 @@
+apiVersion: v1
+data:
+  cowrie.cfg: |
+    [honeypot]
+    hostname = orgb-lab
+    backend = shell
+    auth_class = UserDB
+
+    [ssh]
+    enabled = true
+
+    [telnet]
+    enabled = false
+
+    [output_jsonlog]
+    enabled = true
+kind: ConfigMap
+metadata:
+  name: cowrie-config

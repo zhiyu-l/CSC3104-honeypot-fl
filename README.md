@@ -13,7 +13,7 @@ Fault Tolerant Federated Learning for Collaborative Honeypot Intrusion Detection
 │       ├── base/           Shared Kubernetes manifests
 │       └── overlays/
 │           ├── local/      Settings for a local cluster
-│           └── aws/        Settings for the AWS cluster
+│           └── aws/        Settings for the AWS clusters
 ├── docs/adr/               Architecture decision records
 ├── experiments/            Evaluation scenarios and results
 ├── infra/                  AWS infrastructure as code
@@ -63,6 +63,14 @@ Architecture decision records: short notes on each significant design choice (wh
 GitHub Actions pipelines: linting, tests, building Docker images and pushing them to a registry.
 
 ## Rules for the repo
+
+Cowrie Kubernetes setup: [deployment and recovery guide](docs/cowrie-kubernetes.md).
+Local development: [three kind clusters, storage, autoscaling and S3 uploads](docs/cowrie-local.md).
+ML team: [S3 access, current data paths and duplicate-handling contract](docs/cowrie-ml-handoff.md).
+Cowrie configuration targets three separate EKS clusters (`orga-honeypot-cluster`,
+`orgb-honeypot-cluster`, `orgc-honeypot-cluster`), each using `default`.
+The AWS Cowrie overlays are independent templates; render local settings and use
+the context-checked command wrapper in the guide for every cluster operation.
 
 - Never commit secrets, `.env` files, AWS keys, Cowrie logs, datasets or model checkpoints.
 - Do not push directly to `main`; open a pull request from a feature branch.

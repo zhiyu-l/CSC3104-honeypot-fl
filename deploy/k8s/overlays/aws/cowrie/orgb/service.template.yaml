@@ -1,0 +1,29 @@
+# TEMPLATE: render with deploy/k8s/cowrie_config.py before applying.
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-attributes: load_balancing.cross_zone.enabled=true
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: TCP
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+  name: cowrie-ssh
+spec:
+  allocateLoadBalancerNodePorts: true
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  loadBalancerClass: eks.amazonaws.com/nlb
+  loadBalancerSourceRanges:
+  - REPLACE_ALLOWED_SOURCE_CIDR
+  ports:
+  - name: ssh
+    port: 2222
+    protocol: TCP
+    targetPort: 2222
+  selector:
+    app: cowrie
+  sessionAffinity: None
+  type: LoadBalancer
