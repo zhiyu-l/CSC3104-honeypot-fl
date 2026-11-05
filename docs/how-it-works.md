@@ -42,7 +42,6 @@ makes sense if every org uses the same model, features and labels.
 | `services/coordinator/` | Flower ServerApp: fault-tolerant round loop around a pluggable strategy |
 | `deploy/flower-app/` | Run settings that `flwr run` sends to the SuperLink |
 | `deploy/local/` | Docker Compose for 1 SuperLink + 3 SuperNodes |
-| `prototypes/andrew-flower/` | Original prototype, kept for reference only (not used) |
 
 ## What each file does
 
@@ -53,7 +52,7 @@ makes sense if every org uses the same model, features and labels.
 | `schema.py` | The 16 per-session features (schema version 2). `validate_row()` rejects bad rows (missing columns, text, NaN, negatives) and caps huge values, since attackers control the logs. `transform()` applies `log1p`. `label_session()` assigns one of 4 attack classes (brute force, recon, persistence, malware download) by a fixed rule so every org labels identically; `parse_label()` reads the text labels in the log processor's CSVs. |
 | `model.py` | `HoneypotMLP` (16 → 64 → 64 → 4). `get_weights()` / `set_weights()` convert between the model and the list of numpy arrays Flower sends. |
 | `metadata.py` | `UpdateMetadata`: client ID, round, model version, number of examples and a unique `update_id`, attached to every update. `check_update()` decides whether the coordinator accepts it. |
-| `synthetic.py` | Fake sessions matching the schema, with a different attack mix per org (non-IID), used when no data path is set (tests, or machines without the dataset). |
+| `synthetic.py` | Fake sessions matching the schema, with a different attack mix per org (non-IID), used when no data path is set (machines without the dataset). |
 
 ### `services/client/src/fl_client/`
 
