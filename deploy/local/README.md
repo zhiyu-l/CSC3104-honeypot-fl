@@ -5,14 +5,20 @@ the shared `HoneypotMLP` on synthetic sessions from `fl-common` (or on the real 
 split with `compose.real-data.yaml`, see `setup_README.md`). Based on Andrew's Flower
 prototype (`andrew` branch).
 
-## 1. Python environment (for the `flwr` CLI)
+## 1. Python environment (for `flwr` CLI and tests)
 
 From the repo root, with Python 3.11+ (Flower 1.40 does not support 3.10):
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e libs/fl-common -e services/client -e services/coordinator
+pip install -e "libs/fl-common[dev]" -e "services/client[dev]" -e "services/coordinator[dev]"
+```
+
+Run the tests:
+
+```powershell
+pytest libs/fl-common; pytest services/client; pytest services/coordinator
 ```
 
 ## 2. Point `flwr` at the local SuperLink (once)

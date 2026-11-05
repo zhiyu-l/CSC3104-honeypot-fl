@@ -13,7 +13,8 @@ Shared code for the coordinator, client, log processor and model API. See
 ## Install (from a service folder or the repo root)
 
 ```bash
-pip install -e libs/fl-common
+pip install -e libs/fl-common[dev]
+pytest libs/fl-common
 ```
 
 ## Quick use
