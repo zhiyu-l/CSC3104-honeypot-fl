@@ -1,2 +1,7 @@
+# Store text files with LF in git; Windows checkouts may still use CRLF locally.
+* text=auto
+# Must stay LF even on Windows, or they break inside Linux containers
+Dockerfile text eol=lf
+*.sh text eol=lf
 # Keep the ConfigMap-mounted uploader executable by /bin/sh after Windows checkouts.
 services/cowrie/*.sh text eol=lf

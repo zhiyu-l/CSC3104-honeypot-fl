@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fl-coordinator"
+version = "0.1.0"
+description = "Flower ServerApp: fault-tolerant coordinator for CSC3104-honeypot-fl"
+requires-python = ">=3.11"
+dependencies = [
+    "fl-common",
+    "flwr>=1.40.0,<1.41.0",
+    "numpy>=1.26",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fl_coordinator"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -76,3 +76,11 @@ describe-*.json
 *.tfvars
 *.tfvars.json
 .terraform/
+
+# Flower runtime files
+.flwr/
+
+# Python packaging / test output
+*.egg-info/
+.pytest_cache/
+final_model.npz
