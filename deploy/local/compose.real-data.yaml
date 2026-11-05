@@ -1,0 +1,28 @@
+# Train on the real Kaggle Cowrie split instead of synthetic data.
+#
+# Layer it on top of compose.yaml, from the repo root:
+#   docker compose -f deploy/local/compose.yaml -f deploy/local/compose.real-data.yaml up --build -d
+#
+# Needs data/processed/kaggle/split/train/orgA.csv, orgB.csv, orgC.csv, made by
+#   python tools/cowrie_dataset/cowrie_sessions.py label
+#   python tools/cowrie_dataset/split_orgs.py
+# The data is git-ignored and mounted read-only. Each org only sees its own file.
+
+services:
+  supernode-a:
+    environment:
+      FL_DATA_PATH: /data/orgA.csv
+    volumes:
+      - ../../data/processed/kaggle/split/train/orgA.csv:/data/orgA.csv:ro
+
+  supernode-b:
+    environment:
+      FL_DATA_PATH: /data/orgB.csv
+    volumes:
+      - ../../data/processed/kaggle/split/train/orgB.csv:/data/orgB.csv:ro
+
+  supernode-c:
+    environment:
+      FL_DATA_PATH: /data/orgC.csv
+    volumes:
+      - ../../data/processed/kaggle/split/train/orgC.csv:/data/orgC.csv:ro

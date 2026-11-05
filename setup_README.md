@@ -2,8 +2,9 @@
 
 Runs one coordinator (SuperLink) and three org clients (SuperNodes) that train the shared
 `HoneypotMLP` model with fault tolerance (quorum, retries, rejection of stale, duplicate
-and bad updates). Training currently uses synthetic sessions from `libs/fl-common`;
-real Cowrie data is not integrated yet.
+and bad updates). By default the clients train on synthetic sessions from
+`libs/fl-common`; to train on the real Kaggle Cowrie split, see "Training on real data"
+in step 5.
 
 For how the system works internally, see `docs/how-it-works.md`.
 
@@ -86,6 +87,33 @@ The first build takes a few minutes because it downloads PyTorch.
 
 Rebuild with the same command (`up --build -d`) after changing any code in `libs/` or
 `services/`, because the code is installed inside the images.
+
+### Training on real data
+
+Each org can train on its own share of the Kaggle Cowrie dataset instead of synthetic
+sessions. First build the split (the data stays in the git-ignored `data/` folder):
+
+1. Download the [Kaggle dataset](https://www.kaggle.com/datasets/nlaha11/global-ssh-and-telnet-honeypot-logs-cowrie)
+   and unzip it so the 10 honeypot folders are in `data\raw\kaggle-cowrie\logs\`.
+2. From the repo root:
+
+   ```powershell
+   python tools/cowrie_dataset/cowrie_sessions.py label
+   python tools/cowrie_dataset/split_orgs.py
+   ```
+
+   This writes `data\processed\kaggle\split\train\orgA.csv`, `orgB.csv`, `orgC.csv`
+   (1,148 sessions each; main attacks: A brute force, B malware download, C persistence)
+   and the replay set for the attack side.
+
+Then start the containers with the real-data override added:
+
+```powershell
+docker compose -f deploy/local/compose.yaml -f deploy/local/compose.real-data.yaml up --build -d
+```
+
+Each SuperNode gets only its own org's CSV, mounted read-only. Use the same two `-f`
+flags for `ps`, `logs` and `down`.
 
 ## 6. Run training
 

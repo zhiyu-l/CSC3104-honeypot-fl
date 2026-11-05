@@ -16,6 +16,7 @@ from fl_common import (
     check_update,
     get_weights,
     label_session,
+    parse_label,
     set_weights,
     transform,
     validate_row,
@@ -45,10 +46,11 @@ def test_schema_import_does_not_need_torch():
 
 
 def test_validate_row_orders_and_clips():
-    values = validate_row(_row(duration_s=1e9, commands_count=3))
+    values = validate_row(_row(duration_s=1e9, n_commands=3, cmd_exec=5))
     assert len(values) == NUM_FEATURES
     assert values[FEATURE_NAMES.index("duration_s")] == 86_400.0
-    assert values[FEATURE_NAMES.index("commands_count")] == 3.0
+    assert values[FEATURE_NAMES.index("n_commands")] == 3.0
+    assert values[FEATURE_NAMES.index("cmd_exec")] == 1.0  # flags clip to 1
 
 
 @pytest.mark.parametrize(
@@ -75,10 +77,27 @@ def test_validate_row_rejects_missing():
 
 
 def test_label_session_rules():
-    assert label_session(_row()) is AttackClass.SCAN
-    assert label_session(_row(login_attempts=5, failed_logins=5)) is AttackClass.BRUTE_FORCE
-    assert label_session(_row(login_attempts=1, successful_logins=1, commands_count=2)) is AttackClass.RECON
-    assert label_session(_row(download_count=1)) is AttackClass.MALWARE
+    assert label_session(_row()) is None  # scan
+    assert label_session(_row(n_tcpip_requests=2, n_login_success=1)) is None  # tunnel
+    assert label_session(_row(n_login_failed=1)) is AttackClass.BRUTE_FORCE
+    assert label_session(_row(n_login_success=1)) is AttackClass.BRUTE_FORCE
+    assert label_session(_row(n_login_success=1, n_commands=2)) is AttackClass.RECON
+    assert label_session(_row(n_commands=4, cmd_persistence=1)) is AttackClass.PERSISTENCE
+    # most serious rule wins
+    assert label_session(_row(n_commands=4, cmd_persistence=1, n_file_uploads=1)) is AttackClass.MALWARE_DOWNLOAD
+    assert label_session(_row(n_commands=1, cmd_download=1)) is AttackClass.MALWARE_DOWNLOAD
+
+
+def test_parse_label():
+    assert parse_label("persistence") is AttackClass.PERSISTENCE
+    assert parse_label("Malware_Download") is AttackClass.MALWARE_DOWNLOAD
+    assert parse_label("0") is AttackClass.BRUTE_FORCE
+    assert parse_label("scan") is None
+    assert parse_label("tunnel") is None
+    with pytest.raises(SchemaError):
+        parse_label("ddos")
+    with pytest.raises(SchemaError):
+        parse_label("9")
 
 
 def test_transform_is_log1p():
@@ -173,3 +192,42 @@ def test_model_learns_synthetic_data():
         opt.step()
     acc = (model(Xt).argmax(1) == yt).float().mean().item()
     assert acc > 0.9
+
+
+# ---- log processor agrees with the schema ------------------------------------
+
+def _log_processor():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[3] / "tools" / "cowrie_dataset" / "cowrie_sessions.py"
+    if not path.is_file():
+        pytest.skip("tools/cowrie_dataset not present")
+    spec = importlib.util.spec_from_file_location("cowrie_sessions", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_log_processor_features_match_schema():
+    assert tuple(_log_processor().FEATURES) == FEATURE_NAMES
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {},
+        {"n_login_failed": 1},
+        {"n_login_success": 1, "n_tcpip_requests": 3},
+        {"n_login_success": 1, "n_commands": 2},
+        {"n_commands": 2, "cmd_persistence": 1},
+        {"n_commands": 2, "cmd_persistence": 1, "n_url_downloads": 1},
+        {"n_commands": 1, "cmd_download": 1},
+    ],
+)
+def test_log_processor_labels_match_schema(state):
+    lp = _log_processor()
+    s = lp._new_session("hp", "sid")
+    s.update(state)
+    text = lp.label(s)
+    assert parse_label(text) == label_session(_row(**state))

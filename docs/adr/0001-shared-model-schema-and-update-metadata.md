@@ -52,3 +52,16 @@ All shared definitions live in `libs/fl-common/` and every service imports them 
   `label_session`.
 - Changing the schema or model breaks compatibility with old checkpoints; the version
   fields let the coordinator reject mismatched updates instead of silently averaging them.
+
+## Update: schema version 2 (real Cowrie data)
+
+Training moved from synthetic sessions to the Kaggle "Global SSH & Telnet Honeypot Logs
+(Cowrie)" dataset, processed by `tools/cowrie_dataset/`. The schema changed accordingly:
+
+- 16 features (login counts, command counts, timings, file transfers, port forwarding and
+  five command-pattern flags). IPs, locations and SSH client versions are excluded
+  because replaying attacks changes them.
+- Classes are now brute force, recon, persistence and malware download. Scan and tunnel
+  sessions are kept by the log processor for counting but excluded from training.
+- `SCHEMA_VERSION` is 2, so the coordinator rejects updates from clients still on v1.
+- The model becomes 16 → 64 → 64 → 4; the layer structure is unchanged.

@@ -47,3 +47,19 @@ def test_csv_skips_hostile_rows(tmp_path):
     X, y = read_feature_csv(path)
     assert X.shape == (2, NUM_FEATURES)
     assert y.tolist() == [2, 2]
+
+
+def test_csv_from_log_processor(tmp_path):
+    """Same layout as tools/cowrie_dataset output: extra columns, text labels."""
+    path = tmp_path / "orgA.csv"
+    cols = ["honeypot", "session_id", "src_ip", "start", "label", *FEATURE_NAMES]
+
+    def line(label):
+        meta = ["hp", "hp:abc", "1.2.3.4", "2024-10-25T00:00:00Z", label]
+        return ",".join(meta + ["1"] * NUM_FEATURES)
+
+    rows = [line("brute_force"), line("persistence"), line("scan"), line("malware_download"), line("ddos")]
+    path.write_text("\n".join([",".join(cols), *rows]) + "\n")
+    X, y = read_feature_csv(path)
+    assert X.shape == (3, NUM_FEATURES)  # scan and the unknown label are skipped
+    assert y.tolist() == [0, 2, 3]

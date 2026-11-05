@@ -10,9 +10,12 @@ from fl_common.schema import (
     NUM_CLASSES,
     NUM_FEATURES,
     SCHEMA_VERSION,
+    EXCLUDED_LABELS,
+    LABEL_NAMES,
     AttackClass,
     SchemaError,
     label_session,
+    parse_label,
     transform,
     validate_row,
 )
@@ -38,12 +41,15 @@ def __getattr__(name: str):
 
 __all__ = [
     "AttackClass",
+    "EXCLUDED_LABELS",
+    "LABEL_NAMES",
     "FEATURE_NAMES",
     "NUM_CLASSES",
     "NUM_FEATURES",
     "SCHEMA_VERSION",
     "SchemaError",
     "label_session",
+    "parse_label",
     "transform",
     "validate_row",
     *_LAZY,

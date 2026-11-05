@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from fl_common import FEATURE_NAMES, HoneypotMLP, label_session, transform, validate_row
+from fl_common import FEATURE_NAMES, HoneypotMLP, label_session, parse_label, transform, validate_row
 from fl_common.synthetic import make_org_dataset
 
 
@@ -26,22 +26,31 @@ class OrgData:
 
 
 def read_feature_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Read a CSV written by the log processor: FEATURE_NAMES columns plus optional `label`.
+    """Read a CSV written by the log processor (tools/cowrie_dataset).
 
-    Every row goes through validate_row, so malformed or hostile rows are skipped
-    instead of reaching training.
+    Needs the FEATURE_NAMES columns; other columns (honeypot, session_id,
+    src_ip, start) are ignored. `label` may be text ("persistence") or a class
+    number; if missing it is derived with label_session.
+
+    Every row goes through validate_row, so malformed or hostile rows are
+    skipped instead of reaching training. Scan/tunnel sessions are skipped too.
     """
+    if not path.is_file():
+        raise FileNotFoundError(f"data file not found: {path}")
     X, y = [], []
     with path.open(newline="") as f:
         for raw in csv.DictReader(f):
             try:
                 row = {k: float(raw[k]) for k in FEATURE_NAMES}
                 values = validate_row(row)
-            except (KeyError, TypeError, ValueError):
+                label = raw.get("label")
+                cls = parse_label(label) if label not in (None, "") else label_session(row)
+            except (KeyError, TypeError, ValueError):  # SchemaError is a ValueError
                 continue
-            label = raw.get("label")
+            if cls is None:
+                continue
             X.append(values)
-            y.append(int(label) if label not in (None, "") else int(label_session(row)))
+            y.append(int(cls))
     if not X:
         raise ValueError(f"no valid rows in {path}")
     return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.int64)

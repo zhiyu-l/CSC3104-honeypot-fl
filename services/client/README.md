@@ -14,7 +14,7 @@ Configuration (env vars take priority over `--node-config`):
 |---|---|---|
 | `FL_ORG_ID` | `org-id` | Name reported in update metadata |
 | `FL_ORG_INDEX` | `org-index` | Which synthetic shard to use (ignored when a data path is set) |
-| `FL_DATA_PATH` | `data-path` | CSV from the log processor: `FEATURE_NAMES` columns plus optional `label` |
+| `FL_DATA_PATH` | `data-path` | CSV from `tools/cowrie_dataset` (e.g. `train/orgA.csv`): `FEATURE_NAMES` columns plus optional `label` (text or class number). Scan/tunnel rows are skipped |
 | `FL_SUPERLINK_ADDRESS` | | Coordinator address, passed to `flower-supernode --superlink` by the ECS task command |
 
 Training settings (`local-epochs`, `lr`, `batch-size`, `fail-prob`) come from the run
