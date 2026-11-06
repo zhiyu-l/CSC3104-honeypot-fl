@@ -7,8 +7,11 @@ Fault Tolerant Federated Learning for Collaborative Honeypot Intrusion Detection
 ```
 .
 ├── .github/workflows/      CI pipelines
+├── data/                   Raw and processed datasets (git-ignored)
 ├── deploy/
 │   ├── ecs/                Client deployment for customer AWS accounts
+│   ├── flower-app/         Flower run settings and federations (flwr run)
+│   ├── local/              Docker Compose stack for local FL runs
 │   └── k8s/
 │       ├── base/           Shared Kubernetes manifests
 │       └── overlays/
@@ -18,12 +21,17 @@ Fault Tolerant Federated Learning for Collaborative Honeypot Intrusion Detection
 ├── experiments/            Evaluation scenarios and results
 ├── infra/                  AWS infrastructure as code
 ├── libs/fl-common/         Code shared between services
-└── services/
-    ├── client/             Flower client (one per organisation)
-    ├── coordinator/        Flower server and aggregation strategy
-    ├── cowrie/             Cowrie SSH honeypot configuration
-    ├── log-processor/      Turns Cowrie logs into training features
-    └── model-api/          Serves global model versions
+├── models/                 Saved global models, one folder per run (git-ignored)
+├── services/
+│   ├── client/             Flower client (one per organisation)
+│   ├── coordinator/        Flower server and aggregation strategy
+│   ├── cowrie/             Cowrie SSH honeypot configuration
+│   ├── log-processor/      Turns Cowrie logs into training features
+│   └── model-api/          Serves global model versions
+└── tools/
+    ├── cowrie_dataset/     Label Cowrie sessions and split them into orgs
+    ├── evaluate_model.py   Test a saved model (per-class metrics, confusion matrix)
+    └── run_pipeline.py     Run the whole ML pipeline end to end
 ```
 
 ## What goes in each folder
@@ -33,7 +41,7 @@ Each subfolder is one independently built and deployed component. Every service 
 
 | Folder | Contents |
 |---|---|
-| `coordinator/` | The Flower server: round management, FedAvg aggregation, quorum-based round completion, stale/duplicate update rejection and client resynchronisation. |
+| `coordinator/` | The Flower server: round management, aggregation (FedAvg, FedMedian or FedProx, chosen per run), quorum-based round completion, stale/duplicate update rejection and client resynchronisation. It saves the global model after every successful round and at the end of the run, and can resume a stopped run from its last checkpoint. |
 | `client/` | The Flower client run by each organisation: loads local features, trains the local model and sends only model parameters to the coordinator. |
 | `cowrie/` | Configuration for the Cowrie SSH honeypot (config files, Dockerfile if customised). Cowrie is treated as untrusted and must stay isolated from training services. |
 | `log-processor/` | Reads Cowrie JSON logs and converts them into feature data for the client. Logs are attacker-controlled, so this must validate input and never execute anything from it. |
@@ -48,7 +56,12 @@ Everything needed to run the services, but no application code.
 - `k8s/base/` holds manifests shared by every environment: Deployments, Services, NetworkPolicies, health checks, and CPU/memory requests and limits for the coordinator and model API.
 - `k8s/overlays/local/` holds Kustomize patches for a local cluster (e.g. kind or k3d) used during development.
 - `k8s/overlays/aws/` holds Kustomize patches for the AWS deployment (image registry, load balancer, storage).
+- `flower-app/` holds the Flower app config: run settings (rounds, strategy, model saving) and the federations `flwr run` connects to.
+- `local/` holds the Docker Compose stack for running the coordinator and three org clients on one machine, with synthetic or real data.
 - `ecs/` holds the templates (e.g. CloudFormation and ECS task definitions) that let each simulated customer deploy the client in their own AWS account on ECS Fargate.
+
+### `tools/`
+Scripts for the ML pipeline that run outside the services: `cowrie_dataset/` labels Kaggle Cowrie sessions and splits them into the three orgs (training data plus held-out replay data), `evaluate_model.py` tests a saved global model, and `run_pipeline.py` runs every stage in order (see [ML pipeline](#ml-pipeline)).
 
 ### `infra/`
 Infrastructure as code for the provider side on AWS: networking, EC2 instances for the Kubernetes cluster, S3 buckets, ECR repositories and IAM roles. Nothing should be created by hand in the AWS console without being captured here.
