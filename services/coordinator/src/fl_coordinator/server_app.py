@@ -36,6 +36,8 @@ def main(grid: Grid, context: Context) -> None:
 
     strategy = make_strategy(
         strategy_name,
+        proximal_mu=float(cfg.get("proximal-mu", 0.1)),
+        outlier_factor=float(cfg.get("outlier-factor", 5.0)),
         fraction_train=1.0,
         fraction_evaluate=1.0,
         min_train_nodes=quorum,

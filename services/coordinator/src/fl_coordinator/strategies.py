@@ -3,18 +3,39 @@
 Owned by Amos. Strategies only combine weights: quorum, retries, stale and
 duplicate rejection all live in runner.py so they apply to every strategy.
 
-Only `fedavg` is wired in so far. To add the others, map the names to
-flwr.serverapp.strategy.FedMedian and FedProx (FedProx sends "proximal-mu"
-to clients in the train config; the client already uses that key).
+    fedavg     average weighted by each org's number of examples
+    fedmedian  coordinate-wise median (resists one org sending bad weights)
+    fedprox    FedAvg plus a proximal term on the clients; sends "proximal-mu"
+               in the train config, which fl_client.task.train_local uses
+    adaptive   FedAvg normally, median in rounds where an update is an outlier
+               (see adaptive.py)
 """
 
 from __future__ import annotations
 
-from flwr.serverapp.strategy import FedAvg, Strategy
+from flwr.serverapp.strategy import FedAvg, FedMedian, FedProx, Strategy
+
+from fl_coordinator.adaptive import AdaptiveStrategy
+
+STRATEGIES = ("fedavg", "fedmedian", "fedprox", "adaptive")
 
 
-def make_strategy(name: str, **config) -> Strategy:
+def make_strategy(
+    name: str, *, proximal_mu: float = 0.1, outlier_factor: float = 5.0, **config
+) -> Strategy:
+    """Build the strategy called `name`. `config` goes to the Flower strategy as-is.
+
+    `proximal_mu` is only used by fedprox, `outlier_factor` only by adaptive.
+    """
     name = name.lower()
     if name == "fedavg":
         return FedAvg(**config)
-    raise ValueError(f"unknown strategy {name!r}")
+    if name == "fedmedian":
+        return FedMedian(**config)
+    if name == "fedprox":
+        if proximal_mu < 0:
+            raise ValueError(f"proximal-mu must be >= 0, got {proximal_mu}")
+        return FedProx(proximal_mu=proximal_mu, **config)
+    if name == "adaptive":
+        return AdaptiveStrategy(outlier_factor=outlier_factor, **config)
+    raise ValueError(f"unknown strategy {name!r}; choose from {', '.join(STRATEGIES)}")
