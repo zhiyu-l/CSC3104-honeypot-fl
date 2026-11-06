@@ -55,6 +55,19 @@ flwr run . local-deployment --stream --run-config "fail-prob=0.0 num-server-roun
 The run ends with a per-round table: attempts, model version and what happened to
 each update (`accept`, `failed`, `stale_round`, `stale_model`, `duplicate`, `bad_arrays`, ...).
 
+The global model is saved to `models/<run-name>/` in the repo (mounted into the
+coordinator container at `/app/models`): `round_NNN.npz` after every successful
+round and `model.npz` at the end. String settings need single quotes:
+
+```powershell
+flwr run . local-deployment --stream --run-config "run-name='fedprox-10r' strategy='fedprox' num-server-rounds=10"
+# continue a run that stopped part-way (path as seen inside the container):
+flwr run . local-deployment --stream --run-config "resume-from='/app/models/fedprox-10r' num-server-rounds=10"
+```
+
+Test a saved model with `python tools/evaluate_model.py`, or run every stage
+with `python tools/run_pipeline.py` (see the ML pipeline section of the main README).
+
 ## Without Docker
 
 Same thing as local processes (no image rebuild needed after code changes):
