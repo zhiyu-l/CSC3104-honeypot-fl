@@ -12,6 +12,8 @@ data-v2/
 *.pt
 *.pth
 checkpoints/
+models/
+*.npz
 
 # Logs
 *.log

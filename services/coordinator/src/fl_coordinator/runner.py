@@ -23,10 +23,10 @@ from __future__ import annotations
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
-from flwr.app import ArrayRecord, ConfigRecord, Message
+from flwr.app import ArrayRecord, ConfigRecord, Message, MetricRecord
 from flwr.serverapp import Grid
 from flwr.serverapp.strategy import Strategy
 from flwr.serverapp.strategy.result import Result
@@ -120,7 +120,13 @@ class FaultTolerantRunner:
         num_rounds: int,
         evaluate_config: ConfigRecord | None = None,
         start_round: int = 1,
+        on_round_end: Callable[[RoundLog, ArrayRecord, MetricRecord | None], None] | None = None,
     ) -> Result:
+        """Run num_rounds rounds starting at start_round.
+
+        on_round_end(log, global_arrays, eval_metrics) is called after every
+        round that produced a new global model (used to save checkpoints).
+        """
         result = Result()
         arrays = initial_arrays
         result.arrays = arrays
@@ -172,6 +178,8 @@ class FaultTolerantRunner:
             if eval_metrics is not None:
                 result.evaluate_metrics_clientapp[rnd] = eval_metrics
                 print(f"Round {rnd} eval: {dict(eval_metrics)}")
+            if on_round_end is not None:
+                on_round_end(log, arrays, eval_metrics)
 
         print(f"\nTraining completed in {time.time() - t0:.2f} seconds.")
         self.print_summary()

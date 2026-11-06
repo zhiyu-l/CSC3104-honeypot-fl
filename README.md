@@ -62,6 +62,32 @@ Architecture decision records: short notes on each significant design choice (wh
 ### `.github/workflows/`
 GitHub Actions pipelines: linting, tests, building Docker images and pushing them to a registry.
 
+## ML pipeline
+
+From raw Cowrie logs to a tested global model. Each stage reads the files the
+previous one wrote, so any stage can be rerun on its own.
+
+| # | Stage | Command | Output |
+|---|---|---|---|
+| 1 | label | `python tools/cowrie_dataset/cowrie_sessions.py label` | `data/processed/kaggle/sessions.csv` |
+| 2 | split | `python tools/cowrie_dataset/split_orgs.py` | `data/processed/kaggle/split/train/orgX.csv`, `split/replay/orgX/cowrie.json` |
+| 3 | train | `flwr run . local-deployment --stream` (in `deploy/flower-app`, local stack running) | `models/<run-name>/` |
+| 4 | replay | replay the held-out attacks, then `cowrie_sessions.py label --logs <replay logs> --out data/processed/replay/sessions.csv` | `data/processed/replay/sessions.csv` |
+| 5 | evaluate | `python tools/evaluate_model.py --model models/<run-name> --data data/processed/replay/sessions.csv` | `models/<run-name>/eval_report.json` |
+
+`python tools/run_pipeline.py` runs all five in order (Docker running, venv active).
+It skips label, split and replay when their output is already up to date, and
+accepts `--from`, `--to`, `--only`, `--strategy`, `--rounds` and `--run-name`.
+Without `--replay-logs` it tests on the held-out events from the split, so it
+works offline; after the real replay, point `--replay-logs` at the Cowrie logs
+it produced (one sub-folder per org).
+
+Only the global model is saved: a checkpoint after every successful round
+(`round_NNN.npz`) and the final model (`model.npz`). Each `.npz` has a `.json`
+next to it with the schema and architecture versions and a SHA-256, which
+`fl_common.load_model` checks before using it. To continue a run that stopped,
+pass `--run-config "resume-from='/app/models/<run-name>'"` to `flwr run`.
+
 ## Rules for the repo
 
 Cowrie Kubernetes setup: [deployment and recovery guide](docs/cowrie-kubernetes.md).

@@ -23,6 +23,11 @@ services:
     command: ["--insecure", "--host", "0.0.0.0", "--isolation", "subprocess"]
     ports:
       - "127.0.0.1:8000:8000"
+    # Global model checkpoints land in <repo>/models/<run-name>/ on the host.
+    environment:
+      FL_MODEL_DIR: /app/models
+    volumes:
+      - ../../models:/app/models
 
   supernode-a:
     <<: *supernode
