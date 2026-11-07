@@ -1,0 +1,13 @@
+# The SuperNode only dials out to the coordinator; nothing needs to reach it.
+# Deny all ingress so a compromised pod in the cluster cannot talk to it.
+# (Enforced only where the CNI supports NetworkPolicy.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fl-client-deny-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: fl-client
+  policyTypes:
+  - Ingress

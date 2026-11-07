@@ -1,0 +1,18 @@
+# Shared kind changes for the FL client. Do not deploy this directory on its own:
+# deploy ../orga, ../orgb or ../orgc into the matching kind-<org>-honeypot-cluster.
+#
+# Locally there is no feature pipeline in S3 yet, so the S3 init container is
+# removed and /data/train.csv comes from the `fl-train-data` ConfigMap, created
+# by hand from the git-ignored split (data/processed/kaggle/split/train/orgX.csv).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../../../base/fl-client
+images:
+- name: honeypot-fl-client
+  newTag: latest           # built by docker compose, loaded with `kind load`
+patches:
+- path: local.patch.yaml
+  target:
+    kind: Deployment
+    name: fl-client

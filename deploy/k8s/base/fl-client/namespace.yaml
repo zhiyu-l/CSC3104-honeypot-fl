@@ -1,0 +1,6 @@
+# Separate from Cowrie's `default` namespace so the attacker-facing honeypot pods
+# and the training node do not share service accounts, Secrets or policies.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fl

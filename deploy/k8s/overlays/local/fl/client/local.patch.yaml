@@ -1,0 +1,13 @@
+# Drop the S3 init container and read train.csv from the `fl-train-data`
+# ConfigMap instead (JSON patch: strategic merge can't swap a volume's source).
+- op: remove
+  path: /spec/template/spec/initContainers
+- op: replace
+  path: /spec/template/spec/volumes/0
+  value:
+    name: train-data
+    configMap:
+      name: fl-train-data
+      items:
+      - key: train.csv
+        path: train.csv
