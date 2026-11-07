@@ -100,16 +100,35 @@ continues on quorum (2 of 3) or retries the round:
 kubectl --context kind-orgb-honeypot-cluster -n fl delete pod -l app=fl-client
 ```
 
-Kill the coordinator during a run. The clients keep retrying and reconnect when
-it is back, but the run itself stops, so resume it from the last checkpoint:
+Kill the coordinator during a run. Start a longer run so there is time to act:
+
+```powershell
+cd deploy/flower-app
+flwr run . local-deployment --stream --run-config "fail-prob=0.0 num-server-rounds=10"
+```
+
+It prints `Saving global model checkpoints to /app/models/<run-name>`. Once a few
+`Saved checkpoint .../round_NNN.npz` lines appear, restart the coordinator from a
+second terminal at the repository root:
 
 ```powershell
 docker compose -f deploy/local/compose.yaml restart superlink
-cd deploy/flower-app
-flwr run . local-deployment --stream --run-config "resume-from=/app/models/<run-name>"
 ```
 
-`<run-name>` is the folder under `models/` printed at the start of the first run.
+The `flwr` terminal then reports that the SuperLink is unavailable; that is
+expected, because the run stops with the coordinator. The clients keep retrying
+and reconnect on their own (check with `kubectl ... -n fl logs deployment/fl-client`).
+After about a minute, resume from the last checkpoint, still in `deploy/flower-app`:
+
+```powershell
+flwr run . local-deployment --stream --run-config 'resume-from=\"/app/models/<run-name>\" fail-prob=0.0 num-server-rounds=10'
+```
+
+- `resume-from` takes the run folder, not a `round_NNN.npz` file inside it; the
+  coordinator picks the newest checkpoint itself and continues from the next round.
+- Keep `num-server-rounds` the same as the original run.
+- The `\"` escapes are for Windows PowerShell 5.1, which strips plain inner double
+  quotes. On PowerShell 7.3+ use `'resume-from="/app/models/<run-name>" ...'` instead.
 
 ## Cleanup
 
