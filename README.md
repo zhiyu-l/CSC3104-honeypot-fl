@@ -106,6 +106,9 @@ pass `--run-config "resume-from='/app/models/<run-name>'"` to `flwr run`.
 Cowrie Kubernetes setup: [deployment and recovery guide](docs/cowrie-kubernetes.md).
 Local development: [three kind clusters, storage, autoscaling and S3 uploads](docs/cowrie-local.md).
 ML team: [S3 access, current data paths and duplicate-handling contract](docs/cowrie-ml-handoff.md).
+Replay processing: [generate shared ML features and publish completed runs](docs/cowrie-feature-processing.md).
+Nightly automation: [one combined raw-backup and feature Job per organisation](docs/cowrie-nightly.md).
+Handoff status: [verified deployment and remaining teammate checks](docs/cowrie-handoff-audit.md).
 Cowrie configuration targets three separate EKS clusters (`orga-honeypot-cluster`,
 `orgb-honeypot-cluster`, `orgc-honeypot-cluster`), each using `default`.
 The AWS Cowrie overlays are independent templates; render local settings and use

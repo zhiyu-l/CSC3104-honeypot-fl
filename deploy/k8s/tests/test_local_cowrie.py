@@ -51,10 +51,17 @@ class LocalOverlays(unittest.TestCase):
                 self.assertEqual(settings['AWS_DEFAULT_REGION'], 'ap-southeast-1')
                 upload_volumes = {v['name']: v for v in template['spec']['volumes']}
                 self.assertEqual(upload_volumes['logs']['persistentVolumeClaim']['claimName'], claim['metadata']['name'])
-                mount = next(m for m in uploader['volumeMounts'] if m['name'] == 'logs')
+                mount = next(m for m in uploader['volumeMounts'] if m['mountPath'] == '/logs')
                 self.assertTrue(mount['readOnly'])
                 self.assertNotIn('subPath', mount)
                 self.assertNotIn('subPathExpr', mount)
+                self.assertEqual(uploader['image'], 'cowrie-nightly:local-v1')
+                self.assertEqual(uploader['command'], ['python', '/app/services/log-processor/nightly.py'])
+                self.assertEqual(cron['concurrencyPolicy'], 'Forbid')
+                state = next(m for m in uploader['volumeMounts'] if m['mountPath'] == '/state')
+                self.assertEqual(state['subPath'], '.nightly-state')
+                self.assertEqual(state['name'], 'logs')
+                self.assertTrue(uploader['securityContext']['readOnlyRootFilesystem'])
                 script = maps[upload_volumes['upload-script']['configMap']['name']]['data']['upload.sh']
                 self.assertEqual(script, (ROOT / 'services/cowrie/upload.sh').read_text())
                 policy = json.loads((ROOT / f'infra/cowrie/local/uploader-{org}.policy.json').read_text())

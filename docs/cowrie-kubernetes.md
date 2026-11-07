@@ -132,7 +132,7 @@ labels, default namespaces, PV reservations, selectors/ports, HPA behavior, UID 
 mounts and the uploader's full-root mount. Optional offline structural API checks:
 
 ```powershell
-python deploy/k8s/cowrie_config.py validate --schema <path-to-official-swagger.json>
+python deploy/k8s/cowrie_config.py validate --schema "<path-to-official-swagger.json>"
 python -m unittest discover -s deploy/k8s/tests -v
 ```
 

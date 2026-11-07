@@ -1,5 +1,8 @@
 # Local configuration and documentation audit
 
+Historical record. See the [7 November audit](cowrie-handoff-audit.md) for the
+combined nightly processor and current handoff status.
+
 Date: 3 November 2026 (Asia/Singapore).
 
 This is a repository/offline audit, not a fresh inspection of AWS or live clusters.

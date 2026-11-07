@@ -1,0 +1,13 @@
+{
+  "manifest_version": 1,
+  "organisation": "orga",
+  "run_id": "replay-001",
+  "sessions": [
+    {
+      "pod_uid": "REPLACE_WITH_POD_UID",
+      "session_id": "REPLACE_WITH_NEW_COWRIE_SESSION_ID",
+      "source_session_id": "original-kaggle-sensor:original-session-id",
+      "expected_label": "recon"
+    }
+  ]
+}

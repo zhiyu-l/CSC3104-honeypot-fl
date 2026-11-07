@@ -14,8 +14,46 @@ spec:
             organisation: orgb
         spec:
           automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            fsGroup: 999
+          initContainers:
+          - name: prepare-processor-state
+            image: busybox:1.37.0
+            command: [sh, -c, 'mkdir -p /volume/.nightly-state && chown 999:999 /volume/.nightly-state']
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
+              runAsNonRoot: false
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: [ALL]
+                add: [CHOWN, DAC_OVERRIDE]
+            volumeMounts:
+            - name: logs
+              mountPath: /volume
           containers:
           - name: uploader
+            image: cowrie-nightly:local-v1
+            imagePullPolicy: Never
+            command: [python, /app/services/log-processor/nightly.py]
+            resources:
+              limits:
+                memory: 1Gi
+            securityContext:
+              readOnlyRootFilesystem: true
+            volumeMounts:
+            - name: logs
+              mountPath: /state
+              subPath: .nightly-state
+            - name: scratch
+              mountPath: /tmp
             envFrom:
             - secretRef:
                 name: cowrie-aws-credentials
+          volumes:
+          - name: scratch
+            emptyDir:
+              sizeLimit: 1Gi
