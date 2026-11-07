@@ -1,0 +1,13 @@
+**
+!tools/
+!tools/cowrie_dataset/
+!tools/cowrie_dataset/cowrie_sessions.py
+!libs/
+!libs/fl-common/
+!libs/fl-common/src/
+!libs/fl-common/src/fl_common/
+!libs/fl-common/src/fl_common/__init__.py
+!libs/fl-common/src/fl_common/schema.py
+!services/
+!services/log-processor/
+!services/log-processor/process_replay.py

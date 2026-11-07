@@ -1,10 +1,113 @@
 # Cowrie logs: handoff to the ML team
 
-The honeypot operator runs Cowrie, persistent storage and S3 upload Jobs. The ML
-team owns downloads, validation, feature extraction, deduplication and training.
+## Start here: receive the current feature batches
+
+The operator successfully published one 1,000-session batch per organisation on
+7 November 2026 and confirmed the objects in S3. Schedules remain **paused by
+choice**. Each run is capped at 1,000; the full backlog has not been measured.
+See the [dated handoff audit](cowrie-handoff-audit.md) for verification boundaries.
+
+| Organisation | Current processed data |
+| --- | --- |
+| A | `s3://csc3104-cowrie-orga/orga/processed/sessions/` |
+| B | `s3://csc3104-cowrie-orgb/orgb/processed/sessions/` |
+| C | `s3://csc3104-cowrie-orgc/orgc/processed/sessions/` |
+
+Use your assigned reader identity, region `ap-southeast-1`, and the repository
+revision supplied by the operator. A clone does not create your AWS profile.
+Configure that profile as explained under **Identity and downloads**, then run
+this from the repository root. The example assumes authorised all-three access;
+download only organisations you are permitted to access:
+
+```powershell
+& {
+    foreach ($org in @('orga', 'orgb', 'orgc')) {
+        aws s3 sync "s3://csc3104-cowrie-$org/$org/processed/sessions/" "./data-v2/nightly/$org/" --profile cowrie-ml-reader
+        if ($LASTEXITCODE -ne 0) { throw "Download failed for $org" }
+    }
+}
+```
+
+Verify completeness, hash and row count before passing the downloaded data to
+the ML loader. This prints batch paths and counts, not source session data:
+
+```powershell
+& {
+    $ErrorActionPreference = 'Stop'
+    $csvFiles = @(Get-ChildItem ./data-v2/nightly -Recurse -File -Filter sessions.csv)
+    if ($csvFiles.Count -eq 0) { throw 'No session CSVs downloaded' }
+    foreach ($csvFile in $csvFiles) {
+        $manifestPath = Join-Path $csvFile.DirectoryName 'manifest.json'
+        if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Incomplete batch: $($csvFile.DirectoryName)" }
+        $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+        $actualHash = (Get-FileHash -LiteralPath $csvFile.FullName -Algorithm SHA256).Hash
+        if ($actualHash -ine $manifest.csv_sha256) { throw "CSV checksum mismatch: $($csvFile.FullName)" }
+        if ($manifest.schema_version -ne 2) { throw 'Unexpected schema version; check with the operator' }
+        $rows = @(Import-Csv -LiteralPath $csvFile.FullName)
+        if ($rows.Count -ne $manifest.rows) { throw "Row count mismatch: $($csvFile.FullName)" }
+        Write-Host "Verified $($csvFile.DirectoryName): $($rows.Count) rows"
+    }
+}
+```
+
+This checks transfer integrity, not suitability for evaluation. Keep each CSV
+with its manifest and record imported batch IDs, CSV hashes and session IDs.
+Do not append the same batch to a dataset twice. Manifests without a CSV are
+also incomplete and must not be ingested.
+
+## Ownership and ML contract
+
+| Owner | Responsibility |
+| --- | --- |
+| Honeypot operator | Clusters, PVCs, Cowrie, uploader identities, publication, checkpoints and operational recovery |
+| Replay owner | Replay held-out attacks; map original dataset sessions to new `(organisation, pod UID, Cowrie session ID)` values and expected labels |
+| ML teammate | Training split/features, reader setup, batch validation, import deduplication, replay selection, training and evaluation |
+
+CSV metadata columns are `honeypot`, `session_id`, `src_ip`, `start`, `label`.
+The remaining 16 raw numeric columns match `FEATURE_NAMES` in
+`libs/fl-common/src/fl_common/schema.py` (schema version 2). `honeypot` is `orgA`,
+`orgB` or `orgC`; output session IDs include organisation, pod UID and Cowrie
+session ID. Both pipelines use `tools/cowrie_dataset/cowrie_sessions.py`.
+
+Apply the ML loader's validation, clipping and log transform exactly once;
+published CSV features are raw. Modeled labels are `brute_force`, `recon`,
+`persistence`, `malware_download`; `scan` and `tunnel` remain visible but are
+excluded by the current model. These are rule-based labels, not independent
+proof that the intended attack succeeded.
+
+Nightly batches contain all eligible completed sessions, including old tests.
+Do not substitute them for the Kaggle training split or call them a held-out
+evaluation set without verified replay mapping. Freeze training/evaluation
+splits and use the same schema/extractor revision. The manifest records
+`extractor_sha256`, `schema_version`, `feature_names` and source hashes for review.
+A checksum proves integrity, not provenance.
+
+`tools/evaluate_model.py` accepts this feature schema, but does not enforce the
+S3 manifest contract or select replay membership for you. Complete those steps
+before invoking it. Do not combine raw snapshots, manual replay outputs and
+nightly batches as independent observations of the same sessions.
+
+## Background and raw-log access
+
+The combined [nightly pipeline](cowrie-nightly.md) publishes general completed
+session features under `<org>/processed/sessions/<batch-uuid>/`. These include
+ordinary SSH activity and historical smoke tests; they are not automatically a
+held-out replay dataset. Identify replay sessions before evaluation. Require the
+completion manifest and verify the CSV hash, just as for manual replay outputs.
+
+The honeypot operator runs Cowrie, persistent storage, raw S3 uploads and the
+[selected replay feature Job](cowrie-feature-processing.md). The ML team owns
+Kaggle training-data preparation, downloads, validation, cross-run deduplication,
+training and evaluation. Both processing paths use the shared session extractor.
 The operator does not need to configure `cowrie-ml-reader` on their computer.
 
-## Current input locations
+For processed replay evaluation, read `<org>/processed/replay/<run-id>/` in the
+corresponding bucket. Require `manifest.json` and verify its CSV hash before
+loading `sessions.csv`. These prefixes exist only after a successful feature
+Job; the raw input locations below remain available for investigation/reprocessing.
+See the feature guide for selection, label limitations and the publication contract.
+
+## Raw input locations (optional investigation/reprocessing)
 
 All three buckets are in `ap-southeast-1` (Singapore):
 
@@ -49,7 +152,8 @@ computer; it is not created by cloning this repository or creating an IAM user.
 If using Identity Center instead, use `aws configure sso` and `aws sso login` with
 your assigned reader permission set. Never use or distribute the uploader keys.
 
-Run downloads from the repository root so the dataset directory is ignored:
+For optional raw-log investigation, use these commands from the repository root.
+For normal feature consumption use the processed-data commands above:
 
 ```powershell
 aws s3 sync s3://csc3104-cowrie-orga/orga/raw/by-pod/ ./data-v2/orga/ --profile cowrie-ml-reader
@@ -99,7 +203,9 @@ Important limitations:
 
 For stronger guarantees, introduce stable event IDs at ingestion or immutable,
 completed log batches with reliable source offsets/segment IDs and a processing
-ledger. These are future ML/uploader improvements, not implemented by this change.
+ledger. The nightly processor now has a completed-session publication checkpoint,
+but no universal event IDs or incremental raw-file offsets. The raw-data
+limitations above still apply.
 
 ## Scheduling and acceptance checks
 

@@ -1,16 +1,25 @@
 # AWS inputs for the local kind lab
 
-These files document the existing setup and provide identity permission policies.
+These files document the setup and provide identity permission policies.
 They do not create buckets, users, role trust relationships or credentials.
 Do not deploy the EKS Pod Identity templates against kind.
+
+The policies also include `<org>/processed/replay/*`: PutObject for each scoped
+uploader and GetObject for the team reader. These are source policy changes;
+the AWS owner must update the live IAM policies before using the
+[replay feature Job](../../../docs/cowrie-feature-processing.md).
+
+The combined [nightly workflow](../../../docs/cowrie-nightly.md) additionally uses
+`<org>/processed/sessions/*`, included in the latest policy files. Apply this
+addition to live IAM even if the earlier replay-only policies were already applied.
 
 ## Buckets
 
 | Organisation | Bucket | Allowed upload prefix | Region |
 | --- | --- | --- | --- |
-| orga | csc3104-cowrie-orga | orga/raw/ | ap-southeast-1 |
-| orgb | csc3104-cowrie-orgb | orgb/raw/ | ap-southeast-1 |
-| orgc | csc3104-cowrie-orgc | orgc/raw/ | ap-southeast-1 |
+| orga | csc3104-cowrie-orga | orga/raw/, orga/processed/replay/, orga/processed/sessions/ | ap-southeast-1 |
+| orgb | csc3104-cowrie-orgb | orgb/raw/, orgb/processed/replay/, orgb/processed/sessions/ | ap-southeast-1 |
+| orgc | csc3104-cowrie-orgc | orgc/raw/, orgc/processed/replay/, orgc/processed/sessions/ | ap-southeast-1 |
 
 Use the existing buckets only with the owner's authorisation. To recreate the
 lab in another account, create three globally unique general-purpose bucket names,
@@ -29,8 +38,9 @@ snapshots are not automatically removed. See [the ML handoff](../../../docs/cowr
 
 Attach each `uploader-<org>.policy.json` only to that organisation's dedicated
 machine identity. The existing lab uses IAM users named `cowrie-uploader-<org>`
-and local AWS profiles named `cowrie-<org>`. The policies allow PutObject and
-AbortMultipartUpload only under the matching bucket/prefix. They do not grant
+and local AWS profiles named `cowrie-<org>`. The policies allow PutObject under
+the matching raw, processed/replay and processed/sessions prefixes, and AbortMultipartUpload under
+the raw prefix. They do not grant
 read, list, delete, IAM administration or cross-organisation upload access.
 Additional policies on an identity can widen its permissions; review the complete
 identity configuration. SSE-KMS would require additional scoped key permissions;
@@ -45,7 +55,7 @@ Upcoming Jobs use the updated Secret; already-running Jobs retain their environm
 ## Human team access
 
 `team-log-reader.policy.json` permits listing these three buckets and downloading
-JSON-log objects under the organisation prefixes. It grants no upload/delete or
+raw JSON logs and processed session/replay outputs under the organisation prefixes. It grants no upload/delete or
 infrastructure-management permissions. It omits account-wide ListAllMyBuckets;
 use a direct bucket console link or `aws s3 ls s3://<bucket>/<org>/raw/by-pod/`.
 The policy still covers `raw/*` for compatibility with historical logs; consumers

@@ -1,0 +1,121 @@
+# Render with process-replay.ps1; do not apply this template directly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cowrie-features-__ORG__-__RUN_ID__
+  namespace: default
+  labels:
+    app: cowrie-log-processor
+    organisation: __ORG__
+    replay-run: __RUN_ID__
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: cowrie-log-processor
+        organisation: __ORG__
+        replay-run: __RUN_ID__
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: process
+        image: __IMAGE__
+        imagePullPolicy: Never
+        args:
+        - --logs
+        - /logs
+        - --selection
+        - /selection/replay.json
+        - --out
+        - /output
+        - --org
+        - __ORG__
+        - --run-id
+        - __RUN_ID__
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        volumeMounts:
+        - name: logs
+          mountPath: /logs
+          readOnly: true
+        - name: selection
+          mountPath: /selection
+          readOnly: true
+        - name: output
+          mountPath: /output
+        - name: scratch
+          mountPath: /tmp
+      containers:
+      - name: upload
+        image: public.ecr.aws/aws-cli/aws-cli:2.38.1
+        command: [/bin/sh, /selection/upload_features.sh]
+        env:
+        - name: ORG
+          value: __ORG__
+        - name: RUN_ID
+          value: __RUN_ID__
+        - name: S3_BUCKET
+          value: __BUCKET__
+        - name: AWS_DEFAULT_REGION
+          value: __REGION__
+        - name: AWS_EC2_METADATA_DISABLED
+          value: 'true'
+        - name: HOME
+          value: /tmp
+        envFrom:
+        - secretRef:
+            name: cowrie-aws-credentials
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        volumeMounts:
+        - name: selection
+          mountPath: /selection
+          readOnly: true
+        - name: output
+          mountPath: /output
+          readOnly: true
+        - name: scratch
+          mountPath: /tmp
+      volumes:
+      - name: logs
+        persistentVolumeClaim:
+          claimName: cowrie-logs
+      - name: selection
+        configMap:
+          name: cowrie-features-__ORG__-__RUN_ID__
+      - name: output
+        emptyDir:
+          sizeLimit: 128Mi
+      - name: scratch
+        emptyDir:
+          sizeLimit: 1Gi

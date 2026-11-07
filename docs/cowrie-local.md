@@ -145,6 +145,12 @@ selected pod is removed. Stop old port-forwards/standalone containers on port 22
 
 ## 5. S3 uploads (optional)
 
+The local overlays now use the combined nightly image. **Before running upload
+Jobs**, complete the image build/load and IAM permission steps in the
+[nightly guide](cowrie-nightly.md). Applying the overlays alone does not load
+`cowrie-nightly:local-v1` into kind. The helper's `upload` action now runs raw
+backup and completed-session processing together.
+
 See [local AWS inputs and policies](../infra/cowrie/local/README.md).
 The overlays record the team's existing Singapore buckets; change each overlay's
 `S3_BUCKET` and `AWS_DEFAULT_REGION` if using different buckets. Cloning this repo
@@ -183,7 +189,8 @@ explicit cluster. Only uploader pods reference it. Neither credential values nor
 Secret manifests are written into source files. Kubernetes Secrets are not a
 substitute for protecting local Docker/Kubernetes administrator access.
 
-Check the Job logs for SUCCESS and inspect/download JSON objects in the S3 console
+Check the Job logs for `Backed up` and `Published` (or `No new completed sessions`),
+and inspect/download JSON and processed outputs in the S3 console
 using your own reader identity. Upload-only profiles cannot list/read S3 objects.
 After all three destinations are verified, enable the daily midnight Singapore
 schedule explicitly:
@@ -200,10 +207,12 @@ foreach ($org in @('orga', 'orgb', 'orgc')) { & $tool -Action pause -Org $org }
 
 These operations update `upload.patch.yaml` and patch only live `spec.suspend`;
 they do not reapply the Cowrie Deployment. Do not JSON-merge-patch the full
-Kustomize upload patch: its partial container array lacks the base image.
+Kustomize upload patch: JSON merge would replace the base container array and
+lose required inherited configuration.
 Commit `suspend: true` as the team default. Pausing does not stop Jobs already
 running; manual upload Jobs can run while suspended. Do not launch overlapping
-manual upload Jobs: CronJob `Forbid` only governs scheduled Jobs.
+manual upload Jobs: CronJob `Forbid` only governs scheduled Jobs. The nightly
+processor also takes a persistent filesystem lock, so overlapping manual Jobs fail.
 
 The uploader scans `/logs/<pod-uid>/cowrie.json*`, including deleted pods' folders,
 skips symlinks/test files, and never deletes local logs. Destinations are
@@ -216,7 +225,11 @@ Rotation can overlap event content with previously downloaded active files, so
 stable keys do not provide event-level deduplication. The old dated snapshots
 remain untouched. ML consumers must use only `raw/by-pod/`, not the entire `raw/`
 prefix. See [the ML handoff](cowrie-ml-handoff.md) for access and ingestion guidance.
-Only JSON logs are uploaded, not downloaded payloads or all Cowrie runtime files.
+The raw backup includes only JSON logs, not downloaded payloads or all Cowrie
+runtime files. Feature outputs are separately published under
+`<org>/processed/sessions/<batch-uuid>/`. Completed-session IDs and pending
+outputs are retained in `.nightly-state/` on the PVC; preserve this directory
+to avoid reprocessing previously published sessions.
 The computer must be awake with Docker running. The configured one-hour starting
 deadline is not a guarantee to recover every missed schedule after downtime.
 
@@ -303,3 +316,12 @@ References: [Metrics Server](https://github.com/kubernetes-sigs/metrics-server),
 [kind](https://kind.sigs.k8s.io/docs/user/quick-start/),
 [RWO semantics](https://kubernetes.io/docs/concepts/storage/persistent-volumes/),
 [AWS profile export](https://docs.aws.amazon.com/cli/latest/reference/configure/export-credentials.html).
+
+## Replay feature processing
+
+For new logs produced by held-out attack replay, use the separate
+[feature processing guide](cowrie-feature-processing.md). It supplies explicit
+session selection, a manual processing/upload Job per organisation, and the
+ML output contract. The local CronJob now supports combined raw backup and
+automatic completed-session processing; follow the [nightly deployment guide](cowrie-nightly.md)
+to build/load its image, update IAM, test and enable the still-paused schedule.
