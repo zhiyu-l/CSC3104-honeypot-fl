@@ -1,0 +1,17 @@
+# FL client for orgc. Apply only to context kind-orgc-honeypot-cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fl
+labels:
+- pairs:
+    organisation: orgc
+  includeSelectors: false
+  includeTemplates: true
+resources:
+- ../client
+configMapGenerator:
+- name: fl-client-settings
+  literals:
+  - FL_ORG_ID=org-c
+  - FL_ORG_INDEX=2
+  - SUPERLINK_ADDRESS=superlink:8000

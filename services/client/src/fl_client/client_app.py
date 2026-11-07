@@ -7,7 +7,7 @@ Trains HoneypotMLP on the org's local sessions and replies with:
              duplicate and incompatible updates
 
 Which org this node is comes from, in order:
-    env FL_ORG_ID / FL_ORG_INDEX / FL_DATA_PATH   (ECS Fargate in AWS)
+    env FL_ORG_ID / FL_ORG_INDEX / FL_DATA_PATH   (Kubernetes Deployment, deploy/k8s/base/fl-client)
     node config org-id / org-index / data-path    (supernode --node-config)
 """
 

@@ -1,0 +1,20 @@
+# Coordinator for the FL clients running on the local kind clusters.
+#
+# Also attaches the SuperLink to Docker's `kind` network (created by kind), so
+# client pods in kind-org{a,b,c}-honeypot-cluster reach it at superlink:8000.
+# Start only the coordinator; the clients run as Kubernetes pods:
+#   docker compose -f deploy/local/compose.yaml -f deploy/local/compose.kind.yaml up --build -d superlink
+# See docs/fl-kubernetes-local.md.
+
+services:
+  superlink:
+    networks:
+      default: {}
+      kind:
+        aliases:
+          - superlink
+
+networks:
+  kind:
+    name: kind
+    external: true

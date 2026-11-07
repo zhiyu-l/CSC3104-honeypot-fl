@@ -1,0 +1,18 @@
+# FL client (Flower SuperNode) for ONE organisation's cluster.
+#
+# Runs beside Cowrie, never inside its pods: Cowrie is attacker-facing and scaled
+# by its HPA, while the FL client must be a single, stable node per org.
+# Overlays must supply the `fl-client-settings` ConfigMap (see deployment.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fl
+labels:
+- pairs:
+    app.kubernetes.io/part-of: honeypot-fl
+  includeSelectors: false
+  includeTemplates: true
+resources:
+- namespace.yaml
+- serviceaccount.yaml
+- deployment.yaml
+- networkpolicy.yaml

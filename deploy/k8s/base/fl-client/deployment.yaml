@@ -1,0 +1,120 @@
+# One SuperNode per organisation. It dials out to the shared coordinator
+# (SUPERLINK_ADDRESS) and trains on that org's feature CSV only.
+#
+# Required ConfigMap `fl-client-settings` (from the overlay):
+#   FL_ORG_ID          org-a | org-b | org-c   (UpdateMetadata client_id)
+#   FL_ORG_INDEX       0 | 1 | 2
+#   SUPERLINK_ADDRESS  host:port of the coordinator's Fleet API
+#   AWS_DEFAULT_REGION, S3_BUCKET, S3_FEATURES_KEY   (S3 overlays only)
+#
+# The init container copies s3://$S3_BUCKET/$S3_FEATURES_KEY to /data/train.csv
+# at pod start. New features are picked up by restarting the pod
+# (kubectl rollout restart deployment/fl-client).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-client
+spec:
+  replicas: 1                # never scale: one org = one Flower node
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: fl-client
+  strategy:
+    type: Recreate           # avoid two nodes for the same org during a rollout
+  template:
+    metadata:
+      labels:
+        app: fl-client
+    spec:
+      serviceAccountName: fl-client
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000      # `app` user created in services/client/Dockerfile
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: fetch-features
+        image: public.ecr.aws/aws-cli/aws-cli:2.38.1
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -ec
+        - aws s3 cp "s3://${S3_BUCKET}/${S3_FEATURES_KEY}" /data/train.csv --only-show-errors
+        envFrom:
+        - configMapRef:
+            name: fl-client-settings
+        env:
+        - name: HOME
+          value: /tmp
+        - name: AWS_EC2_METADATA_DISABLED
+          value: 'true'
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: train-data
+          mountPath: /data
+      containers:
+      - name: supernode
+        image: honeypot-fl-client
+        imagePullPolicy: IfNotPresent
+        args:
+        - --insecure
+        - --superlink=$(SUPERLINK_ADDRESS)
+        - --host=127.0.0.1   # Runtime API is only used by the ClientApp subprocess
+        - --port=9094
+        - --isolation=subprocess
+        - --health-server-address=0.0.0.0:8081
+        envFrom:
+        - configMapRef:
+            name: fl-client-settings
+        env:
+        - name: FL_DATA_PATH
+          value: /data/train.csv
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        startupProbe:
+          grpc:
+            port: 8081
+          periodSeconds: 5
+          failureThreshold: 24   # torch import can take a while on small nodes
+        livenessProbe:
+          grpc:
+            port: 8081
+          periodSeconds: 20
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1536Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: train-data
+          mountPath: /data
+          readOnly: true
+      volumes:
+      - name: train-data
+        emptyDir:
+          sizeLimit: 256Mi
