@@ -1,13 +1,16 @@
 """Tests for make_strategy and the aggregation each strategy performs (no Flower network)."""
 
+import re
+from pathlib import Path
+
 import numpy as np
 import pytest
 from flwr.app import ArrayRecord, ConfigRecord, MetricRecord, RecordDict
 from flwr.serverapp.strategy import FedAvg, FedMedian, FedProx
 
 from fl_common import HoneypotMLP, get_weights
-from fl_coordinator.adaptive import MEAN, MEDIAN, AdaptiveStrategy, choose_mode
-from fl_coordinator.strategies import make_strategy
+from fl_coordinator.adaptive import MEAN, MEDIAN, AdaptiveStrategy, Mode, choose_mode
+from fl_coordinator.strategies import STRATEGIES, STRATEGY_SPECS, make_strategy
 
 
 class FakeReply:
@@ -193,3 +196,72 @@ def test_outlier_factor_sets_how_far_is_too_far():
     near = [BASE, shifted(BASE, 0.01), shifted(BASE, 0.05)]
     assert choose_mode(near, outlier_factor=5.0) == (MEAN, [])
     assert choose_mode(near, outlier_factor=3.0) == (MEDIAN, [2])
+
+
+# ---- adaptive: checked vs unchecked rounds --------------------------------
+# A round with fewer than MIN_UPDATES_FOR_DETECTION updates cannot be checked for
+# outliers. It still averages (unchanged behaviour), but that must be visible:
+# otherwise "averaged, nothing suspicious" and "averaged, protection off" look the same.
+
+
+def test_mode_is_a_string_enum_compatible_with_plain_strings():
+    assert Mode.MEAN == "mean" and Mode.MEDIAN == "median"
+    assert MEAN is Mode.MEAN and MEDIAN is Mode.MEDIAN
+    assert f"{Mode.MEDIAN}" == "median"
+
+
+def test_checked_round_is_recorded_as_checked():
+    strategy = make_strategy("adaptive")
+    _, metrics = aggregate(strategy, [noisy(BASE, 0.01) for _ in range(3)])
+    assert metrics["agg-checked"] == 1
+    assert strategy.decisions[-1].checked is True
+
+
+def test_round_too_small_to_check_still_averages_but_says_so():
+    strategy = make_strategy("adaptive")
+    sets = [noisy(BASE, 0.01), poison(BASE)]
+    out, metrics = aggregate(strategy, sets)
+    fedavg, _ = aggregate(make_strategy("fedavg"), sets)
+    for a, b in zip(out, fedavg):  # behaviour unchanged: plain average
+        np.testing.assert_allclose(a, b, atol=1e-6)
+    assert metrics["agg-checked"] == 0 and metrics["agg-robust"] == 0
+    d = strategy.decisions[-1]
+    assert (d.mode, d.checked, d.num_updates) == (MEAN, False, 2)
+
+
+# ---- strategy registry: one source of truth -------------------------------
+
+REPO = Path(__file__).resolve().parents[3]
+
+
+def test_registry_lists_every_strategy_and_builds_each():
+    assert STRATEGIES == tuple(STRATEGY_SPECS)
+    for name in STRATEGIES:
+        make_strategy(name)
+
+
+@pytest.mark.parametrize("name, uses_mu, uses_factor", [
+    ("fedavg", False, False), ("fedmedian", False, False), ("fedprox", True, False),
+    ("adaptive", False, True), ("adaptive-prox", True, True),
+])
+def test_registry_says_which_settings_each_strategy_uses(name, uses_mu, uses_factor):
+    spec = STRATEGY_SPECS[name]
+    assert (spec.uses_proximal_mu, spec.uses_outlier_factor) == (uses_mu, uses_factor)
+
+
+def test_run_pipeline_offers_exactly_the_registered_strategies():
+    path = REPO / "tools" / "run_pipeline.py"
+    if not path.is_file():
+        pytest.skip("tools/run_pipeline.py not present")
+    m = re.search(r'"--strategy".*?choices=\[([^\]]*)\]', path.read_text(encoding="utf-8"))
+    assert m, "could not find the --strategy choices in run_pipeline.py"
+    assert tuple(re.findall(r'"([^"]+)"', m.group(1))) == STRATEGIES
+
+
+def test_flower_app_config_comment_lists_the_registered_strategies():
+    path = REPO / "deploy" / "flower-app" / "pyproject.toml"
+    if not path.is_file():
+        pytest.skip("deploy/flower-app/pyproject.toml not present")
+    m = re.search(r'^strategy\s*=.*#\s*(.+)$', path.read_text(encoding="utf-8"), re.M)
+    assert m, "could not find the strategy line in pyproject.toml"
+    assert tuple(s.strip() for s in m.group(1).split("|")) == STRATEGIES
