@@ -44,10 +44,18 @@ BASE = get_weights(HoneypotMLP())
 
 @pytest.mark.parametrize("name, cls", [
     ("fedavg", FedAvg), ("fedmedian", FedMedian), ("fedprox", FedProx), ("FedMedian", FedMedian),
-    ("adaptive", AdaptiveStrategy),
+    ("adaptive", AdaptiveStrategy), ("adaptive-prox", AdaptiveStrategy),
 ])
 def test_make_strategy_returns_right_class(name, cls):
     assert type(make_strategy(name)) is cls
+
+
+def test_adaptive_prox_gets_mu_and_plain_adaptive_does_not():
+    assert make_strategy("adaptive-prox", proximal_mu=0.5).proximal_mu == 0.5
+    # plain adaptive keeps mu=0 so earlier adaptive runs stay reproducible
+    assert make_strategy("adaptive", proximal_mu=0.5).proximal_mu == 0.0
+    with pytest.raises(ValueError):
+        make_strategy("adaptive-prox", proximal_mu=-1.0)
 
 
 def test_unknown_strategy_rejected():
@@ -84,7 +92,7 @@ def test_median_resists_one_poisoned_org_but_average_does_not():
 
 
 def test_aggregated_shapes_match_model():
-    for name in ("fedavg", "fedmedian", "fedprox", "adaptive"):
+    for name in ("fedavg", "fedmedian", "fedprox", "adaptive", "adaptive-prox"):
         out, _ = aggregate(make_strategy(name), [BASE, shifted(BASE, 0.1), shifted(BASE, 0.2)])
         assert [a.shape for a in out] == [w.shape for w in BASE]
 
@@ -94,8 +102,8 @@ class FakeGrid:
         return [1, 2, 3]
 
 
-def test_fedprox_sends_mu_to_clients(monkeypatch):
-    strategy = make_strategy("fedprox", proximal_mu=0.3, min_available_nodes=1, min_train_nodes=1)
+def train_config_sent(monkeypatch, strategy):
+    """The config record `strategy.configure_train` would send to clients."""
     seen = {}
 
     def fake_construct(record, node_ids, message_type):
@@ -107,7 +115,18 @@ def test_fedprox_sends_mu_to_clients(monkeypatch):
         "flwr.serverapp.strategy.fedavg.sample_nodes", lambda grid, min_avail, n: ([1, 2, 3], [1, 2, 3])
     )
     strategy.configure_train(1, ArrayRecord(BASE), ConfigRecord({}), FakeGrid())
-    assert seen["proximal-mu"] == pytest.approx(0.3)
+    return seen
+
+
+@pytest.mark.parametrize("name", ["fedprox", "adaptive-prox"])
+def test_prox_strategies_send_mu_to_clients(monkeypatch, name):
+    strategy = make_strategy(name, proximal_mu=0.3, min_available_nodes=1, min_train_nodes=1)
+    assert train_config_sent(monkeypatch, strategy)["proximal-mu"] == pytest.approx(0.3)
+
+
+def test_plain_adaptive_sends_no_mu(monkeypatch):
+    strategy = make_strategy("adaptive", proximal_mu=0.3, min_available_nodes=1, min_train_nodes=1)
+    assert "proximal-mu" not in train_config_sent(monkeypatch, strategy)
 
 
 # ---- adaptive -------------------------------------------------------------

@@ -31,6 +31,12 @@ training):
 - Subtle attacks (e.g. reversing the update, small noise) are not detected;
   the median only limits them when detection fires.
 
+With `proximal_mu > 0` (strategy name `adaptive-prox`) it also sends
+"proximal-mu" in the train config, exactly like Flower's FedProx, so clients
+add the FedProx term (mu/2)*||w - w_global||^2 to their loss. That works on
+the client side (it limits how far each org drifts on its own non-IID data)
+and is independent of the server-side average/median choice above.
+
 As with every strategy, accepting/rejecting updates stays in runner.py; this
 only decides HOW to combine the updates the runner accepted.
 """
@@ -42,8 +48,9 @@ from dataclasses import dataclass
 from logging import INFO
 
 import numpy as np
-from flwr.app import ArrayRecord, Message, MetricRecord
+from flwr.app import ArrayRecord, ConfigRecord, Message, MetricRecord
 from flwr.common.logger import log
+from flwr.serverapp import Grid
 from flwr.serverapp.strategy import FedAvg
 from flwr.serverapp.strategy.strategy_utils import aggregate_arrayrecords
 
@@ -91,14 +98,29 @@ class RoundDecision:
 
 
 class AdaptiveStrategy(FedAvg):
-    """FedAvg that switches to the coordinate-wise median when an update is an outlier."""
+    """FedAvg that switches to the coordinate-wise median when an update is an outlier.
 
-    def __init__(self, *, outlier_factor: float = 5.0, **kwargs) -> None:
+    `proximal_mu > 0` also makes clients train with the FedProx term.
+    """
+
+    def __init__(self, *, outlier_factor: float = 5.0, proximal_mu: float = 0.0, **kwargs) -> None:
         if outlier_factor <= 1.0:
             raise ValueError(f"outlier-factor must be > 1, got {outlier_factor}")
+        if proximal_mu < 0:
+            raise ValueError(f"proximal-mu must be >= 0, got {proximal_mu}")
         super().__init__(**kwargs)
         self.outlier_factor = outlier_factor
+        self.proximal_mu = proximal_mu
         self.decisions: list[RoundDecision] = []
+
+    def configure_train(
+        self, server_round: int, arrays: ArrayRecord, config: ConfigRecord, grid: Grid
+    ) -> Iterable[Message]:
+        # Same key and behaviour as Flower's FedProx; with mu = 0 nothing is sent,
+        # so clients train exactly as under plain FedAvg.
+        if self.proximal_mu > 0:
+            config["proximal-mu"] = self.proximal_mu
+        return super().configure_train(server_round, arrays, config, grid)
 
     def aggregate_train(
         self, server_round: int, replies: Iterable[Message]

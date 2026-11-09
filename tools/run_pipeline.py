@@ -162,7 +162,7 @@ def main() -> None:
     ap.add_argument("--replay-out", type=Path, default=ROOT / "data/processed/replay/sessions.csv")
     # training
     ap.add_argument("--run-name", help="model folder under models/ (default: new for train, latest for evaluate)")
-    ap.add_argument("--strategy", default="fedavg", choices=["fedavg", "fedmedian", "fedprox", "adaptive"])
+    ap.add_argument("--strategy", default="fedavg", choices=["fedavg", "fedmedian", "fedprox", "adaptive", "adaptive-prox"])
     ap.add_argument("--rounds", type=int, default=5)
     ap.add_argument("--fail-prob", type=float, default=0.0, help="simulated client crash probability")
     ap.add_argument("--train-config", default="", help='extra flwr --run-config, e.g. "lr=0.005 local-epochs=5"')
