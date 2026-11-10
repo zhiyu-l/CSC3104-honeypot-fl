@@ -1,9 +1,14 @@
 {
   "aws_region": "REPLACE_AWS_REGION",
-  "s3_bucket": "REPLACE_S3_BUCKET",
+  "nightly_image": "REPLACE_ECR_REPOSITORY@sha256:REPLACE_IMAGE_DIGEST",
   "efs_filesystem_id": "REPLACE_EFS_FILESYSTEM_ID",
   "organisations": {
     "orga": {
+      "s3_bucket": "REPLACE_ORGA_BUCKET",
+      "kms_key_arn": null,
+      "schedule_enabled": false,
+      "uploader_uid": 999,
+      "uploader_gid": 999,
       "cluster_name": "orga-honeypot-cluster",
       "kubectl_context": "orga-honeypot-cluster",
       "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orga-honeypot-cluster",
@@ -14,6 +19,11 @@
       "uploader_role_arn": "arn:aws:iam::REPLACE_AWS_ACCOUNT_ID:role/REPLACE_UPLOADER_ROLE_ORGA"
     },
     "orgb": {
+      "s3_bucket": "REPLACE_ORGB_BUCKET",
+      "kms_key_arn": null,
+      "schedule_enabled": false,
+      "uploader_uid": 999,
+      "uploader_gid": 999,
       "cluster_name": "orgb-honeypot-cluster",
       "kubectl_context": "orgb-honeypot-cluster",
       "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orgb-honeypot-cluster",
@@ -24,6 +34,11 @@
       "uploader_role_arn": "arn:aws:iam::REPLACE_AWS_ACCOUNT_ID:role/REPLACE_UPLOADER_ROLE_ORGB"
     },
     "orgc": {
+      "s3_bucket": "REPLACE_ORGC_BUCKET",
+      "kms_key_arn": null,
+      "schedule_enabled": false,
+      "uploader_uid": 999,
+      "uploader_gid": 999,
       "cluster_name": "orgc-honeypot-cluster",
       "kubectl_context": "orgc-honeypot-cluster",
       "cluster_arn": "arn:aws:eks:REPLACE_AWS_REGION:REPLACE_AWS_ACCOUNT_ID:cluster/orgc-honeypot-cluster",

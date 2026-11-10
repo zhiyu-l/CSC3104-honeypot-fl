@@ -2,6 +2,10 @@
 
 Status: accepted AWS target configuration; EKS deployment not verified. Date: 3 November 2026.
 
+Update: [destination EKS evidence from 10 November](../cowrie-eks-nightly.md)
+records three running clusters and successful combined uploads. The original
+status below is historical; HPA and network-isolation checks remain unverified.
+
 Subsequent local kind deployment and S3 upload evidence is recorded in
 [the local guide](../cowrie-local.md); it does not establish an EKS deployment.
 

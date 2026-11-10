@@ -1,5 +1,9 @@
 # AWS inputs for the local kind lab
 
+These old bucket/IAM-user policies remain specific to the local lab. For account
+`909891185696`, use the AWS renderer's per-organisation uploader/reader policies
+and [EKS runbook](../../../docs/cowrie-eks-nightly.md), including KMS key settings.
+
 These files document the setup and provide identity permission policies.
 They do not create buckets, users, role trust relationships or credentials.
 Do not deploy the EKS Pod Identity templates against kind.

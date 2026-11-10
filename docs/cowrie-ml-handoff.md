@@ -2,16 +2,20 @@
 
 ## Start here: receive the current feature batches
 
-The operator successfully published one 1,000-session batch per organisation on
-7 November 2026 and confirmed the objects in S3. Schedules remain **paused by
-choice**. Each run is capped at 1,000; the full backlog has not been measured.
-See the [dated handoff audit](cowrie-handoff-audit.md) for verification boundaries.
+The destination EKS deployment in account `909891185696` published an initial
+1,000-session batch per organisation on 10 November 2026; operator downloads
+passed CSV checksum checks. Subsequent checkpoints reported 3,000 sessions per
+organisation and all three midnight Singapore schedules were enabled. Each run
+is capped at 1,000; backlog completion and timer-triggered execution remain
+unverified. See [the EKS runbook](cowrie-eks-nightly.md). The
+[7 November audit](cowrie-handoff-audit.md) describes the separate local lab,
+whose buckets lacked the account suffix and whose schedules were paused.
 
 | Organisation | Current processed data |
 | --- | --- |
-| A | `s3://csc3104-cowrie-orga/orga/processed/sessions/` |
-| B | `s3://csc3104-cowrie-orgb/orgb/processed/sessions/` |
-| C | `s3://csc3104-cowrie-orgc/orgc/processed/sessions/` |
+| A | `s3://csc3104-cowrie-orga-909891185696/orga/processed/sessions/` |
+| B | `s3://csc3104-cowrie-orgb-909891185696/orgb/processed/sessions/` |
+| C | `s3://csc3104-cowrie-orgc-909891185696/orgc/processed/sessions/` |
 
 Use your assigned reader identity, region `ap-southeast-1`, and the repository
 revision supplied by the operator. A clone does not create your AWS profile.
@@ -22,7 +26,7 @@ download only organisations you are permitted to access:
 ```powershell
 & {
     foreach ($org in @('orga', 'orgb', 'orgc')) {
-        aws s3 sync "s3://csc3104-cowrie-$org/$org/processed/sessions/" "./data-v2/nightly/$org/" --profile cowrie-ml-reader
+        aws s3 sync "s3://csc3104-cowrie-${org}-909891185696/$org/processed/sessions/" "./data-v2/eks-909891185696/nightly/$org/" --profile cowrie-ml-reader
         if ($LASTEXITCODE -ne 0) { throw "Download failed for $org" }
     }
 }
@@ -34,7 +38,7 @@ the ML loader. This prints batch paths and counts, not source session data:
 ```powershell
 & {
     $ErrorActionPreference = 'Stop'
-    $csvFiles = @(Get-ChildItem ./data-v2/nightly -Recurse -File -Filter sessions.csv)
+    $csvFiles = @(Get-ChildItem ./data-v2/eks-909891185696/nightly -Recurse -File -Filter sessions.csv)
     if ($csvFiles.Count -eq 0) { throw 'No session CSVs downloaded' }
     foreach ($csvFile in $csvFiles) {
         $manifestPath = Join-Path $csvFile.DirectoryName 'manifest.json'
@@ -89,7 +93,7 @@ nightly batches as independent observations of the same sessions.
 
 ## Background and raw-log access
 
-The combined [nightly pipeline](cowrie-nightly.md) publishes general completed
+The combined [EKS nightly pipeline](cowrie-eks-nightly.md) publishes general completed
 session features under `<org>/processed/sessions/<batch-uuid>/`. These include
 ordinary SSH activity and historical smoke tests; they are not automatically a
 held-out replay dataset. Identify replay sessions before evaluation. Require the
@@ -106,6 +110,8 @@ corresponding bucket. Require `manifest.json` and verify its CSV hash before
 loading `sessions.csv`. These prefixes exist only after a successful feature
 Job; the raw input locations below remain available for investigation/reprocessing.
 See the feature guide for selection, label limitations and the publication contract.
+The destination EKS deployment and generated IAM policies currently cover nightly
+sessions only; the separate manual replay workflow has not been deployed there.
 
 ## Raw input locations (optional investigation/reprocessing)
 
@@ -113,9 +119,9 @@ All three buckets are in `ap-southeast-1` (Singapore):
 
 | Organisation | Read this prefix |
 | --- | --- |
-| A | s3://csc3104-cowrie-orga/orga/raw/by-pod/ |
-| B | s3://csc3104-cowrie-orgb/orgb/raw/by-pod/ |
-| C | s3://csc3104-cowrie-orgc/orgc/raw/by-pod/ |
+| A | s3://csc3104-cowrie-orga-909891185696/orga/raw/by-pod/ |
+| B | s3://csc3104-cowrie-orgb-909891185696/orgb/raw/by-pod/ |
+| C | s3://csc3104-cowrie-orgc-909891185696/orgc/raw/by-pod/ |
 
 Each source pod has a separate UID directory containing `cowrie.json` and any
 matching rotated files. Source logs survive pod replacement on the PVC, so there
@@ -123,18 +129,21 @@ can be more directories than currently running replicas. Deleted pods' files are
 uploaded too. The uploader excludes symlinks and `cowrie.json.pipeline-test*`.
 Do not treat logs as executable content or expose downloaded payloads to training.
 
-The original uploader wrote new timestamped objects under `raw/YYYY-MM-DD/` on
-every run. Those historical objects remain. Do not combine them with `raw/by-pod/`
+The older local uploader wrote timestamped objects under `raw/YYYY-MM-DD/` on
+every run. Their presence in the new buckets is unverified. Do not combine them with `raw/by-pod/`
 when building a dataset. No automatic S3 deletion or migration has been performed.
 
 ## Identity and downloads
 
-Have the AWS owner assign your own reader identity using
-[`team-log-reader.policy.json`](../infra/cowrie/local/team-log-reader.policy.json).
-It permits list/download operations on the three project buckets, not writes,
-deletion or IAM administration. For organisation-isolated FL clients, the owner
-must restrict each client's reader policy to its own bucket/prefix. The supplied
-all-three policy is for authorised shared analysis, not enforced FL isolation.
+Have the AWS owner assign your reader identity the per-organisation
+`reader-policy.json` generated under `.local/cowrie/rendered/<org>/infra/` by
+[the AWS renderer](../deploy/k8s/cowrie_config.py). It scopes list/download access
+to that organisation and adds KMS Decrypt on its configured key. Key policies
+must also permit access. Grant multiple organisations only to authorised shared
+analysts; FL clients should receive only their own organisation's policy.
+The old [local reader policy](../infra/cowrie/local/team-log-reader.policy.json)
+targets the local lab, not the destination buckets. Operator downloads as WeiZhi
+do not verify access for a teammate's reader identity.
 
 Console users receive individual sign-in details; no access key is necessary for
 browser downloads. An application needs API credentials, not a console password.
@@ -156,9 +165,9 @@ For optional raw-log investigation, use these commands from the repository root.
 For normal feature consumption use the processed-data commands above:
 
 ```powershell
-aws s3 sync s3://csc3104-cowrie-orga/orga/raw/by-pod/ ./data-v2/orga/ --profile cowrie-ml-reader
-aws s3 sync s3://csc3104-cowrie-orgb/orgb/raw/by-pod/ ./data-v2/orgb/ --profile cowrie-ml-reader
-aws s3 sync s3://csc3104-cowrie-orgc/orgc/raw/by-pod/ ./data-v2/orgc/ --profile cowrie-ml-reader
+aws s3 sync s3://csc3104-cowrie-orga-909891185696/orga/raw/by-pod/ ./data-v2/eks-909891185696/raw/orga/ --profile cowrie-ml-reader
+aws s3 sync s3://csc3104-cowrie-orgb-909891185696/orgb/raw/by-pod/ ./data-v2/eks-909891185696/raw/orgb/ --profile cowrie-ml-reader
+aws s3 sync s3://csc3104-cowrie-orgc-909891185696/orgc/raw/by-pod/ ./data-v2/eks-909891185696/raw/orgc/ --profile cowrie-ml-reader
 ```
 
 Start with an empty dataset directory for this layout; don't merge an old download
@@ -209,8 +218,9 @@ limitations above still apply.
 
 ## Scheduling and acceptance checks
 
-Repository CronJobs are suspended by default. When explicitly enabled they run at
-midnight Asia/Singapore. The local computer and Docker clusters must be running.
+New installations default to suspended. The destination EKS schedules were enabled
+for midnight Asia/Singapore; EKS does not depend on the laptop or CloudShell
+staying open. Only kind requires the local computer and Docker clusters running.
 ML consumers should check data freshness rather than assume a daily upload occurred.
 
 Operator acceptance check for stable paths:

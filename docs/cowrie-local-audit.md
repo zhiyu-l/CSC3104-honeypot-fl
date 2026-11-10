@@ -1,7 +1,8 @@
 # Local configuration and documentation audit
 
 Historical record. See the [7 November audit](cowrie-handoff-audit.md) for the
-combined nightly processor and current handoff status.
+local combined nightly processor, or [the EKS runbook](cowrie-eks-nightly.md)
+for the later destination-account deployment and current handoff boundaries.
 
 Date: 3 November 2026 (Asia/Singapore).
 

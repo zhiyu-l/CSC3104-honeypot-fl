@@ -1,5 +1,8 @@
 # Cowrie configuration and architecture report
 
+For the later destination EKS deployment and its verification boundaries, see
+[the EKS runbook](cowrie-eks-nightly.md). This report preserves historical evidence.
+
 Scope: historical EKS preparation report. Later local kind configuration and
 manual upload results are documented in [the local guide](cowrie-local.md).
 The current shared uploader uses stable `raw/by-pod/` keys; see

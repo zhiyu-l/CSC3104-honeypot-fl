@@ -2,6 +2,8 @@
 
 See [the deployment guide](../../docs/cowrie-kubernetes.md) for rendering, local
 Secrets, prerequisites, validation and cleanup.
+The AWS nightly overlay runs the combined Python processor instead of `upload.sh`;
+see [the EKS runbook](../../docs/cowrie-eks-nightly.md) for its image and checkpoints.
 
 - `cowrie.cfg` is the common configuration. AWS organisation patches restore the
   backed-up `orga-lab`, `orgb-lab` and `orgc-lab` hostnames.
@@ -34,4 +36,5 @@ guide. Scale-down can disconnect active SSH sessions because
 CPU-based HPA does not check session activity; see the guide's manual test.
 
 For the separate local kind overlays and team setup, see
-[the local guide](../../docs/cowrie-local.md). No application image build is needed.
+[the local guide](../../docs/cowrie-local.md). Cowrie itself uses its existing
+image; the combined nightly processor has a separate image build.

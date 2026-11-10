@@ -1,5 +1,11 @@
 # Cowrie on three EKS clusters
 
+For the combined nightly processor on the existing destination clusters, start
+with [the EKS nightly runbook](cowrie-eks-nightly.md). Use its focused `nightly.yaml`
+upgrade rather than reapplying Cowrie, storage or Services. This guide also covers
+full provisioning prerequisites and recovery; those components were not audited
+by the recent successful upload tests.
+
 The deployment targets are separate clusters. Each uses the existing `default`
 namespace; organisation identity is carried by labels and configuration.
 
@@ -18,9 +24,11 @@ target, not proof that any new cluster exists or that migration has occurred.
 - `services/cowrie/`: shared Cowrie config, upload script, dry-run cleanup checker
   and placeholder Secret examples. Per-organisation hostname patches remain.
 - `deploy/k8s/base/cowrie/`: shared Deployment, HPA, PVC, uploader ServiceAccount
-  and suspended upload CronJob.
+  and raw-upload CronJob base (replaced by the AWS nightly component).
 - `deploy/k8s/overlays/aws/cowrie/{orga,orgb,orgc}/`: independent cluster overlays,
   labels, hostname, static PV reservation, upload settings and SSH NLB templates.
+- `deploy/k8s/overlays/aws/cowrie/nightly/`: AWS-only combined processing pod,
+  non-root state preparation, Pod Identity and persistent EFS checkpoints.
 - `infra/cowrie/`: IAM trust/permission templates and one Pod Identity association
   template per named cluster, all targeting service account
   `default/cowrie-log-uploader`.
@@ -51,8 +59,11 @@ Copy-Item deploy/k8s/overlays/aws/cowrie/settings.example.json .local/cowrie/set
 
 Fill every placeholder in settings. Keep the fixed cluster names/context aliases;
 provide each actual EKS cluster ARN, its own uploader role ARN, a distinct EFS
-access point and approved source IPv4 CIDRs. Region, bucket and EFS filesystem
-remain common settings; access points, IAM roles and S3 prefixes remain separate.
+access point and approved source IPv4 CIDRs. Region, EFS filesystem and the
+digest-pinned nightly image are common settings. Each organisation supplies its
+own bucket, optional exact KMS key ARN, uploader UID/GID and `schedule_enabled`
+boolean. A fresh installation defaults to paused; preserve true for an already
+enabled deployment. Legacy top-level `s3_bucket` settings must be migrated.
 Each uploader role must belong to its cluster's AWS account/partition. Establish
 EFS and S3 cross-account permissions separately if using different accounts.
 Never put passwords, AWS access keys or tokens into settings or version control.
@@ -121,7 +132,11 @@ Render/validate default to all three targets **independently**. The renderer wri
 `.local/cowrie/rendered/<org>/storage.yaml`, `configuration.yaml`, `workloads.yaml`,
 `services.yaml`, `target.json` and `infra/*.json`. It never contacts AWS or a
 cluster. `target.json` binds an output directory to its organisation, EKS ARN,
-context and namespace. There is no `namespaces.yaml`. Old combined outputs from
+context, namespace and settings fingerprint. `nightly.yaml` additionally contains
+only the upload settings ConfigMap, uploader service account and CronJob for a
+focused upgrade. It duplicates those resources from the full groups; do not
+combine it with them for validation. `infra/reader-policy.json` scopes reads to
+the organisation and configured KMS key. There is no `namespaces.yaml`. Old combined outputs from
 the shared-cluster design are obsolete; the wrapper refuses them. Inspect them
 and retire them locally instead of applying them. Render again after any source
 or setting change; existing files are not refreshed automatically.
@@ -272,7 +287,8 @@ namespace.** Each CronJob pod has the appropriate organisation label. This keeps
 cluster ARN, `default` namespace and service account. Verify cross-organisation
 access is denied using operator-controlled tests.
 
-The CronJob remains suspended, runs at midnight `Asia/Singapore` when enabled,
+The CronJob defaults to suspended unless `schedule_enabled` is true in settings,
+and runs at midnight `Asia/Singapore` when enabled,
 uses `Forbid` concurrency, one-hour start/execution deadlines, three retries and
 history limits of three. A manual Job runs while the CronJob is suspended:
 
@@ -285,21 +301,25 @@ python $tool kubectl --org $org -- logs "job/$job"
 
 Generate benign logs first. Verify STS identity and objects under
 `s3://<bucket>/<org>/raw/by-pod/<source-pod-uid>/<original-filename>`.
-The shared uploader now overwrites stable keys rather than creating dated snapshots.
+The combined processor overwrites stable raw keys rather than creating dated snapshots.
 This affects AWS on the next render/apply; it does not migrate existing S3 objects.
 Existing `<org>/raw/*` policy resources cover the new layout. Uploads skip symlinks/pipeline-test files,
-fail on no matches, include active/rotated files and never delete source logs.
+include active/rotated files and never delete source logs. Unlike the legacy
+shell uploader, the combined processor can back up zero files and report no new
+completed sessions. It then publishes up to 1,000 completed sessions to
+`<org>/processed/sessions/<batch-id>/` with a completion manifest and maintains
+`.nightly-state` on EFS. Preserve that state across runs and upgrades.
 Active files may change during copying; uploads are not a consistent snapshot or
 deduplicated archive. Keep old dated snapshots out of the current ML input prefix;
 see [the handoff](cowrie-ml-handoff.md) for rotation and overwrite semantics.
 Operator credentials must verify contents because uploader
 roles cannot read/delete objects. Do not approve EFS deletion from copy success.
 
-Enable scheduling only after live validation in a reviewed source change (and
-update the validator's expected suspension policy). A temporary operator trial
-can use the guarded wrapper with `patch cronjob cowrie-logs-to-s3 --type=merge`
-and a patch file, but reapplying the current source suspends it again. Unsuspending
-may immediately schedule a missed run within its start deadline.
+Enable scheduling after live validation by setting that organisation's
+`schedule_enabled` to true in ignored settings, rendering again and applying the
+focused `nightly.yaml`. Keep this setting on subsequent renders; the validator
+accepts either boolean state. A live-only patch is temporary and can be overwritten
+by the next apply. Unsuspending may schedule a missed run within its start deadline.
 
 ## HPA and manual scale test
 
