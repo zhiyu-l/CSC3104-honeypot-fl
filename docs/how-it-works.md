@@ -52,6 +52,7 @@ makes sense if every org uses the same model, features and labels.
 | `schema.py` | The 16 per-session features (schema version 2). `validate_row()` rejects bad rows (missing columns, text, NaN, negatives) and caps huge values, since attackers control the logs. `transform()` applies `log1p`. `label_session()` assigns one of 4 attack classes (brute force, recon, persistence, malware download) by a fixed rule so every org labels identically; `parse_label()` reads the text labels in the log processor's CSVs. |
 | `model.py` | `HoneypotMLP` (16 → 64 → 64 → 4). `get_weights()` / `set_weights()` convert between the model and the list of numpy arrays Flower sends. |
 | `metadata.py` | `UpdateMetadata`: client ID, round, model version, number of examples and a unique `update_id`, attached to every update. `check_update()` decides whether the coordinator accepts it. |
+| `evaluation.py` | Scores a saved model on labelled session CSVs (accuracy, per-class precision/recall/F1, confusion matrix, per org). Used by `tools/evaluate_model.py` and by the coordinator at the end of every run, so both report the same numbers. |
 | `synthetic.py` | Fake sessions matching the schema, with a different attack mix per org (non-IID), used when no data path is set (tests, or machines without the dataset). |
 
 ### `services/client/src/fl_client/`
@@ -59,7 +60,8 @@ makes sense if every org uses the same model, features and labels.
 | File | Purpose |
 |---|---|
 | `task.py` | Plain PyTorch, no Flower. `load_org_data()`, `read_feature_csv()`, `train_local()` (with optional FedProx term), `evaluate_local()`. |
-| `client_app.py` | Flower `train()` and `evaluate()` handlers. Works out which org it is, optionally simulates a crash, trains, and replies with weights, metrics and metadata. |
+| `data.py` | Cumulative training data: the org's Kaggle base CSV plus every verified nightly batch from S3 (or a local folder), de-duplicated by session ID, minus held-out test sessions. Falls back to cached batches if S3 can't be reached. |
+| `client_app.py` | Flower `train()` and `evaluate()` handlers. Works out which org it is, optionally simulates a crash, trains, and replies with weights, metrics, metadata and a summary of the data it trained on. |
 
 ### `services/coordinator/src/fl_coordinator/`
 
@@ -67,7 +69,10 @@ makes sense if every org uses the same model, features and labels.
 |---|---|
 | `server_app.py` | Entry point: reads settings, creates the starting model, strategy and runner. |
 | `runner.py` | `FaultTolerantRunner`: quorum, retries, update filtering, model versioning, summary table. |
-| `strategies.py` | `make_strategy(name)`: returns the aggregation strategy. Only `fedavg` so far. |
+| `strategies.py` | `make_strategy(name)`: returns the aggregation strategy. |
+| `checkpoints.py` | Saves the global model after every round and at the end, plus `history.json`; `resume-from` crash recovery. |
+| `publish.py` | The `latest.json` pointer that carries the model from one run to the next, the promotion gate, optional copy to S3, and a rollback command. |
+| `trigger.py` | The scheduled job: submits one run with `init-from='latest' promote=true`, refuses if a run is still in progress. |
 
 Strategies **only average weights**. Deciding which updates count (quorum, stale,
 duplicate, bad weights) lives in `runner.py`, so it works the same for FedAvg, FedMedian
@@ -212,6 +217,45 @@ run()                                   runner.py
 - `main()` in `server_app.py` saves the final weights to `final_model.npz` if
   `save-model = true`.
 
+## The daily cycle (many runs)
+
+One `flwr run` is one run: N rounds, one final model. The daily loop is the same run
+repeated, each one continuing from the last:
+
+```
+00:00  nightly log processor (per org)   Cowrie logs -> <org>/processed/sessions/<batch>/
+~02:00 trigger (scheduled ECS task)       python -m fl_coordinator.trigger
+        -> coordinator starts a run with init-from='latest' promote=true
+        -> round 1 sends the latest global model to every client (this is how
+           clients get the newest model)
+        -> each client trains on its Kaggle base CSV + every verified batch so far
+           (cumulative), skipping held-out test sessions
+        -> rounds as usual (quorum, retries, checkpoints)
+        -> final model scored on the fixed test set (eval-data) -> eval_report.json
+        -> promoted to latest.json only if not worse than the current latest
+        -> optionally copied to S3 (publish-s3-uri)
+```
+
+- **First run (bootstrap):** there is no `latest.json` yet, so it starts from a fresh
+  model. Any run that starts fresh tells the clients `bootstrap=true`, and they train on
+  their Kaggle base CSV only, ignoring nightly batches even if some already exist
+  (`bootstrap-with-batches = true` to include them). That is the bootstrap model.
+- **Starting from a model you already have:** put its run folder in model-dir, score it
+  with `tools/evaluate_model.py` (so the gate has a baseline), then
+  `python -m fl_coordinator.publish --set <run>`. The first scheduled run continues from
+  it, with batches, and no bootstrap happens.
+- **Model versions keep counting** across runs (v3 at the end of run 1, v4 after the
+  first round of run 2...), so a higher version is always a newer model.
+- **`init-from` vs `resume-from`:** `init-from` starts a NEW run folder from an existing
+  model (daily cycle). `resume-from` continues the SAME run after a crash.
+- **`history.json`** of each run records where it started from, which batches each org
+  trained on (and how many held-out sessions were excluded) per round, the test score,
+  and whether it was promoted.
+- **Rollback:** every run folder is kept. `python -m fl_coordinator.publish --set <run>`
+  points `latest.json` back at an older run; `--show` prints it.
+- Normal runs (`flwr run` by hand, experiments) have `promote = false`, so they never
+  move `latest.json`. Only the trigger turns promotion on.
+
 ## Settings
 
 All in `[tool.flwr.app.config]` in `deploy/flower-app/pyproject.toml`. Override per run with
@@ -225,21 +269,28 @@ All in `[tool.flwr.app.config]` in `deploy/flower-app/pyproject.toml`. Override 
 | `max-retries` | coordinator | extra attempts per round |
 | `round-timeout` | coordinator | seconds to wait for replies |
 | `abort-on-failed-round` | coordinator | stop instead of skipping a failed round |
-| `save-model` | coordinator | save `final_model.npz` at the end |
+| `save-model` | coordinator | save checkpoints and `model.npz` |
+| `init-from` | coordinator | `latest`, a run folder or a `.npz`: start a new run from that model |
+| `eval-data` | coordinator | fixed test set CSV(s), scored at the end of every run |
+| `promote`, `promote-tolerance` | coordinator | move `latest.json` to this run if its macro F1 is not worse (minus tolerance) |
+| `publish-s3-uri` | coordinator | also copy the promoted model and `latest.json` to this S3 prefix |
+| `bootstrap-with-batches` | coordinator | `false`: runs that start from a fresh model train on the Kaggle base only |
 | `seed` | both | random seed |
 | `num-orgs` | client | number of orgs the synthetic data is split across |
 | `local-epochs`, `lr`, `batch-size` | client | local training settings |
 | `fail-prob` | client | chance a client crashes on purpose (0 for normal runs) |
 
 Per-org settings come from environment variables on each SuperNode (`FL_ORG_ID`,
-`FL_ORG_INDEX`, `FL_DATA_PATH`), set in `deploy/local/compose.yaml` locally and in the
-ECS task definition on AWS.
+`FL_ORG_INDEX`, `FL_DATA_PATH`, and for the daily cycle `FL_BATCHES_URI`,
+`FL_EXCLUDE_URI`, `FL_CACHE_DIR`; see `services/client/src/fl_client/data.py`), set in
+`deploy/local/compose.yaml` locally and in the `fl-client-settings` ConfigMap on EKS.
 
 ## Not done yet
 
 - Real Cowrie data (needs `services/log-processor/`); synthetic data is currently too easy
   (100% accuracy after one round)
 - FedMedian and FedProx in `strategies.py`
-- Coordinator checkpoints to S3 and resume after a crash
+- Scheduling the trigger on AWS (EventBridge Scheduler + ECS task) and the IAM for
+  reading batches / writing models
 - TLS between SuperLink and SuperNodes
 - AWS deployment (`deploy/ecs/`, `infra/`)

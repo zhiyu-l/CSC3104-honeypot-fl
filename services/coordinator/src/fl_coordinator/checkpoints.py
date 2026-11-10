@@ -11,7 +11,11 @@ Layout of one run (model-dir defaults to $FL_MODEL_DIR, else ./models):
         round_002.npz / .json
         ...
         model.npz / model.json  final global model (the latest successful round)
-        history.json            run settings + per-round outcomes and eval metrics
+        history.json            run settings + per-round outcomes, eval metrics and the
+                                data each org trained on; at the end also where the run
+                                started from, the fixed-test-set score and whether it
+                                was promoted to latest (see publish.py)
+        eval_report.json        fixed-test-set score of model.npz (when eval-data is set)
 
 Every .npz/.json pair is written with fl_common.save_model, so it carries the
 schema/architecture versions and a SHA-256 that fl_common.load_model checks.
@@ -53,9 +57,13 @@ class RunStore:
         self.settings = dict(settings)
         self.rounds: list[dict[str, Any]] = []
         self.last_saved: dict[str, Any] | None = None
+        self.failed_rounds: list[int] = []
+        self.extra: dict[str, Any] = {}  # run-level facts added to history.json (init_from, evaluation, ...)
         history = run_dir / "history.json"
         if history.is_file():  # resumed run: keep the earlier rounds
-            self.rounds = json.loads(history.read_text()).get("rounds", [])
+            old = json.loads(history.read_text())
+            self.rounds = old.get("rounds", [])
+            self.extra = {k: old[k] for k in ("init_from", "bootstrap") if k in old}
 
     # ---- creating / resuming ----------------------------------------------------
 
@@ -105,6 +113,7 @@ class RunStore:
                 "model_version": log.model_version,
                 "outcomes": dict(log.outcomes),
                 "eval_metrics": info["eval_metrics"],
+                "data": log.data,
             }
         )
         self._write_history(finished=False)
@@ -112,15 +121,23 @@ class RunStore:
 
     # ---- end of run ----------------------------------------------------------
 
-    def save_final(self, arrays: ArrayRecord, failed_rounds: list[int]) -> None:
+    def save_final(self, arrays: ArrayRecord, failed_rounds: list[int]) -> dict[str, Any] | None:
+        """Write model.npz/.json. Returns its info, or None if no round succeeded."""
+        self.failed_rounds = failed_rounds
         if self.last_saved is None:
             print("No round succeeded, so there is no global model to save.")
             self._write_history(finished=True, failed_rounds=failed_rounds)
-            return
+            return None
         info = {**self.last_saved, "final": True}
         path = save_model(self.run_dir / "model", arrays.to_numpy_ndarrays(), info)
         self._write_history(finished=True, failed_rounds=failed_rounds)
         print(f"Saved final global model {path.resolve()} (round {info['round']}, v{info['model_version']})")
+        return info
+
+    def add_to_history(self, **facts: Any) -> None:
+        """Record run-level facts (evaluation, promotion, ...) in history.json."""
+        self.extra.update(facts)
+        self._write_history(finished=True, failed_rounds=self.failed_rounds)
 
     def _write_history(self, finished: bool, failed_rounds: list[int] | None = None) -> None:
         data = {
@@ -128,6 +145,7 @@ class RunStore:
             "settings": self.settings,
             "finished": finished,
             "failed_rounds": failed_rounds or [],
+            **self.extra,
             "rounds": self.rounds,
         }
         tmp = self.run_dir / "history.json.tmp"

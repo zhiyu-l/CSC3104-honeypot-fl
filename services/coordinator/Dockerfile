@@ -26,6 +26,10 @@ RUN uv pip install --python /python/venv/bin/python \
         --index-strategy unsafe-best-match \
         ./libs/fl-common ./services/coordinator
 
+# The Flower app definition, so the same image can run the daily trigger as a
+# one-off task:  python -m fl_coordinator.trigger   (see fl_coordinator/trigger.py)
+COPY deploy/flower-app ./flower-app
+
 # Run as a non-root user, like the official image.
 RUN useradd --create-home app && chown -R app:app /app /python
 USER app

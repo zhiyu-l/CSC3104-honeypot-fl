@@ -12,6 +12,7 @@ dependencies = [
     "flwr>=1.40.0,<1.41.0",
     "numpy>=1.26",
     "torch>=2.2",
+    "boto3>=1.34",  # S3 batches / model publishing (only imported when an s3:// setting is used)
 ]
 
 [project.optional-dependencies]

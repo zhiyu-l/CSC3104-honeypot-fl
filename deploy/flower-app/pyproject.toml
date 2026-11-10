@@ -41,10 +41,17 @@ save-model = true             # save the global model after every round + at the
 model-dir = ""                # "" = $FL_MODEL_DIR, else ./models (relative to the coordinator)
 run-name = ""                 # "" = <UTC timestamp>-<strategy>; folder name under model-dir
 resume-from = ""              # path to an existing run folder to continue from its last checkpoint
+# daily cycle (see services/coordinator/src/fl_coordinator/publish.py)
+init-from = ""                # "" = fresh model | "latest" | run folder | .npz: start a NEW run from that model
+eval-data = ""                # fixed test set CSV(s), comma-separated, as seen by the coordinator; "" = skip
+promote = false               # true (set by the trigger): move <model-dir>/latest.json to this run if not worse on eval-data
+promote-tolerance = 0.0       # allowed drop in macro F1 before a run is refused promotion
+publish-s3-uri = ""           # e.g. "s3://bucket/models": also copy the promoted model there
+bootstrap-with-batches = false # fresh-model runs train on the Kaggle base only; true = include nightly batches
 seed = 0
 # client
 num-orgs = 3
 local-epochs = 3
 lr = 0.01
 batch-size = 64
-fail-prob = 0.3               # simulated client crash probability (set 0 for normal runs)
+fail-prob = 0.0               # simulated client crash probability (experiments only, e.g. 0.3)

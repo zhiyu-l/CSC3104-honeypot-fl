@@ -34,6 +34,7 @@ from flwr.serverapp.strategy.result import Result
 from fl_common import UpdateMetadata, Verdict, check_update
 
 META_KEY = "meta"
+DATA_KEY = "data"            # optional ConfigRecord: what the client trained on (see fl_client.data)
 FAILED = "failed"            # reply carried an error (crash, exception, timeout)
 MALFORMED = "malformed"      # missing or unparsable metadata
 BAD_ARRAYS = "bad_arrays"    # wrong shapes, NaN or inf
@@ -46,6 +47,15 @@ class RoundLog:
     succeeded: bool = False
     model_version: int = 0
     outcomes: Counter = field(default_factory=Counter)
+    data: dict[str, dict] = field(default_factory=dict)  # client_id -> data summary of accepted updates
+
+
+def data_summary(msg: Message) -> tuple[str, dict] | None:
+    """(client_id, what it trained on) from an accepted reply, if the client sent it."""
+    if DATA_KEY not in msg.content:
+        return None
+    client = str(dict(msg.content[META_KEY]).get("meta.client_id", "?"))
+    return client, {k: v for k, v in dict(msg.content[DATA_KEY]).items()}
 
 
 def arrays_ok(update: ArrayRecord, reference: ArrayRecord) -> bool:
@@ -78,6 +88,9 @@ class FaultTolerantRunner:
         self.model_version = 0
         self.seen_update_ids: set[str] = set()
         self.history: list[RoundLog] = []
+        # Extra settings sent to clients with every train and evaluate request
+        # (e.g. {"bootstrap": True}: train on the base data only, see server_app.py).
+        self.round_config: dict[str, int | float | str | bool] = {}
 
     # ---- filtering (pure, unit tested) --------------------------------------
 
@@ -140,11 +153,14 @@ class FaultTolerantRunner:
             new_arrays, train_metrics = None, None
             for attempt in range(1, self.max_retries + 2):
                 log.attempts = attempt
-                config = ConfigRecord({"model-version": self.model_version})
+                config = ConfigRecord({**self.round_config, "model-version": self.model_version})
                 messages = self.strategy.configure_train(rnd, arrays, config, grid)
                 replies = grid.send_and_receive(messages=messages, timeout=self.round_timeout)
                 accepted, outcomes = self.filter_replies(replies, arrays)
                 log.outcomes.update(outcomes)
+                for msg in accepted:
+                    if (summary := data_summary(msg)) is not None:
+                        log.data[summary[0]] = summary[1]
                 print(f"Attempt {attempt}: {dict(outcomes)}")
 
                 if len(accepted) >= self.quorum:
@@ -171,7 +187,7 @@ class FaultTolerantRunner:
             print(f"Round {rnd} succeeded -> global model v{self.model_version}")
 
             eval_messages = self.strategy.configure_evaluate(
-                rnd, arrays, evaluate_config or ConfigRecord(), grid
+                rnd, arrays, evaluate_config or ConfigRecord(dict(self.round_config)), grid
             )
             eval_replies = grid.send_and_receive(messages=eval_messages, timeout=self.round_timeout)
             eval_metrics = self.strategy.aggregate_evaluate(rnd, eval_replies)
@@ -194,4 +210,4 @@ class FaultTolerantRunner:
             )
 
 
-__all__ = ["FaultTolerantRunner", "RoundLog", "arrays_ok"]
+__all__ = ["FaultTolerantRunner", "RoundLog", "arrays_ok", "data_summary"]

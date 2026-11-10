@@ -6,10 +6,19 @@
 #   FL_ORG_INDEX       0 | 1 | 2
 #   SUPERLINK_ADDRESS  host:port of the coordinator's Fleet API
 #   AWS_DEFAULT_REGION, S3_BUCKET, S3_FEATURES_KEY   (S3 overlays only)
+#   FL_BATCHES_URI     optional: s3://<bucket>/<org>/processed/sessions/
+#   FL_EXCLUDE_URI     optional: replay selection file(s) of held-out test sessions
 #
-# The init container copies s3://$S3_BUCKET/$S3_FEATURES_KEY to /data/train.csv
-# at pod start. New features are picked up by restarting the pod
-# (kubectl rollout restart deployment/fl-client).
+# Data (see services/client/src/fl_client/data.py):
+#   - The init container copies the org's Kaggle base split,
+#     s3://$S3_BUCKET/$S3_FEATURES_KEY (e.g. <org>/processed/base/train.csv),
+#     to /data/train.csv once at pod start. It does not change between runs.
+#   - At the start of EVERY training run the ClientApp also reads every completed
+#     nightly batch under FL_BATCHES_URI, verifies it against its manifest and
+#     caches it in /tmp/fl-cache, so new attacks are picked up without a restart.
+#   - Sessions listed in FL_EXCLUDE_URI are never trained on.
+#   The pod's role must be able to read the base key, the batches prefix and the
+#   exclusion file, and nothing else.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -84,6 +93,10 @@ spec:
         env:
         - name: FL_DATA_PATH
           value: /data/train.csv
+        - name: FL_CACHE_DIR
+          value: /tmp/fl-cache
+        - name: HOME
+          value: /tmp
         ports:
         - name: health
           containerPort: 8081
@@ -114,7 +127,12 @@ spec:
         - name: train-data
           mountPath: /data
           readOnly: true
+        - name: fl-cache
+          mountPath: /tmp/fl-cache
       volumes:
       - name: train-data
         emptyDir:
           sizeLimit: 256Mi
+      - name: fl-cache       # verified nightly batches; refilled from S3 if the pod restarts
+        emptyDir:
+          sizeLimit: 1Gi

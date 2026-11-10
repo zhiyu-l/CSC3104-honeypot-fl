@@ -65,6 +65,25 @@ flwr run . local-deployment --stream --run-config "run-name='fedprox-10r' strate
 flwr run . local-deployment --stream --run-config "resume-from='/app/models/fedprox-10r' num-server-rounds=10"
 ```
 
+### Daily cycle by hand
+
+The scheduled job on AWS is `python -m fl_coordinator.trigger`. Locally, with the stack
+running, the same command submits one cycle: start from the model in
+`models/latest.json` (a fresh model the first time), train, score on the fixed test set,
+and promote it to `latest.json` if it is not worse. It refuses if a run is still going.
+
+```powershell
+python -m fl_coordinator.trigger --insecure --app deploy/flower-app `
+    --run-config "eval-data='/app/models/eval/sessions.csv' num-server-rounds=10"
+python -m fl_coordinator.publish --model-dir models --show       # which model is latest
+python -m fl_coordinator.publish --model-dir models --set <run>  # roll back
+```
+
+`eval-data` is a path as seen inside the coordinator container (copy the replay
+`sessions.csv` into `models/eval/`). For clients to pick up nightly batches, set
+`FL_BATCHES_URI` (an `s3://` prefix, or a folder mounted into the container) and
+optionally `FL_EXCLUDE_URI` on each SuperNode; see `services/client/src/fl_client/data.py`.
+
 Test a saved model with `python tools/evaluate_model.py`, or run every stage
 with `python tools/run_pipeline.py` (see the ML pipeline section of the main README).
 

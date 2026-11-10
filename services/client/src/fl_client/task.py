@@ -6,7 +6,7 @@ Kept free of Flower imports so it can be unit tested on its own.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +16,8 @@ from torch import nn
 from fl_common import FEATURE_NAMES, HoneypotMLP, label_session, parse_label, transform, validate_row
 from fl_common.synthetic import make_org_dataset
 
+from fl_client.data import DataSummary, load_cumulative
+
 
 @dataclass
 class OrgData:
@@ -23,6 +25,7 @@ class OrgData:
     y_train: torch.Tensor
     X_test: torch.Tensor
     y_test: torch.Tensor
+    summary: DataSummary = field(default_factory=lambda: DataSummary(source="synthetic"))
 
 
 def read_feature_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -62,15 +65,22 @@ def load_org_data(
     data_path: str | None = None,
     test_fraction: float = 0.2,
     seed: int = 0,
+    batches_uri: str | None = None,
+    exclude_uri: str | None = None,
+    cache_dir: str | None = None,
+    run_key: str | None = None,
 ) -> OrgData:
     """Load this org's sessions, apply the shared transform and split train/test.
 
-    Uses the CSV at data_path when given, otherwise synthetic sessions from fl-common.
+    With data_path and/or batches_uri: the base CSV plus every verified nightly
+    batch, de-duplicated and minus held-out sessions (see fl_client.data).
+    Otherwise synthetic sessions from fl-common.
     """
-    if data_path:
-        X, y = read_feature_csv(Path(data_path))
+    if data_path or batches_uri:
+        X, y, summary = load_cumulative(data_path, batches_uri, exclude_uri, cache_dir, run_key)
     else:
         X, y = make_org_dataset(org_index, num_orgs, seed=seed)
+        summary = DataSummary(source="synthetic", n_base=len(y))
 
     X = np.asarray([transform(r) for r in X.tolist()], dtype=np.float32)
     rng = np.random.default_rng(seed + org_index)
@@ -82,6 +92,7 @@ def load_org_data(
         y_train=torch.from_numpy(y[tr]),
         X_test=torch.from_numpy(X[te]),
         y_test=torch.from_numpy(y[te]),
+        summary=summary,
     )
 
 
