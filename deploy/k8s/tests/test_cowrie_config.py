@@ -34,10 +34,13 @@ class ClusterBoundaries(unittest.TestCase):
         self.local_patch = patch.object(config, "LOCAL", self.local)
         self.local_patch.start()
         self.settings = {
-            "aws_region": "ap-southeast-1", "s3_bucket": "cowrie-example-bucket",
+            "aws_region": "ap-southeast-1",
+            "nightly_image": "example.invalid/nightly@sha256:" + "a" * 64,
             "efs_filesystem_id": "fs-00000000000000000",
             "organisations": {
                 org: {"cluster_name": cluster, "kubectl_context": cluster,
+                      "s3_bucket": f"cowrie-example-{org}",
+                      "kms_key_arn": f"arn:aws:kms:ap-southeast-1:000000000000:key/example-{org}",
                       "cluster_arn": f"arn:aws:eks:ap-southeast-1:000000000000:cluster/{cluster}",
                       "efs_access_point_id": f"fsap-{i:017x}",
                       "allowed_source_cidrs": ["192.0.2.1/32"],
@@ -82,6 +85,10 @@ class ClusterBoundaries(unittest.TestCase):
                 config.validate(docs, org)
             self.assertEqual(json.loads((directory / "target.json").read_text()), config.target_for(self.settings, org))
             self.assertFalse((directory / "namespaces.yaml").exists())
+            nightly = list(yaml.safe_load_all((directory / "nightly.yaml").read_text()))
+            self.assertEqual({d["kind"] for d in nightly}, {"CronJob", "ServiceAccount", "ConfigMap"})
+            self.assertEqual(len(nightly), 3)
+            config.check_file_target(org, directory / "nightly.yaml", self.settings)
             identity = directory / "infra"
             association = json.loads((identity / "pod-identity-association.json").read_text())
             self.assertEqual(association, {"clusterName": config.CLUSTERS[org], "namespace": "default",
@@ -91,7 +98,60 @@ class ClusterBoundaries(unittest.TestCase):
             self.assertEqual(trust["aws:RequestTag/eks-cluster-arn"], self.settings["organisations"][org]["cluster_arn"])
             policy = json.loads((identity / "uploader-policy.json").read_text())
             self.assertTrue(policy["Statement"][0]["Resource"].endswith(f"/{org}/raw/*"))
+            values = self.settings["organisations"][org]
+            self.assertIn(values["s3_bucket"], policy["Statement"][0]["Resource"])
+            self.assertEqual(policy["Statement"][1]["Resource"],
+                f"arn:aws:s3:::{values['s3_bucket']}/{org}/processed/sessions/*")
+            self.assertEqual(policy["Statement"][2]["Resource"], values["kms_key_arn"])
+            reader = json.loads((identity / "reader-policy.json").read_text())
+            self.assertEqual(reader["Statement"][-1]["Action"], ["kms:Decrypt"])
+            self.assertEqual(reader["Statement"][-1]["Resource"], values["kms_key_arn"])
+            self.assertNotIn("s3:PutObject", json.dumps(reader))
+            self.assertNotIn(self.settings["organisations"]["orgb" if org == "orga" else "orga"]["s3_bucket"], json.dumps(reader))
+            cm = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "cowrie-upload-settings")
+            self.assertEqual(cm["data"]["S3_BUCKET"], values["s3_bucket"])
         self.assertFalse((self.local / "rendered" / "workloads.yaml").exists())
+
+    def test_nightly_schedule_and_identity_settings(self):
+        self.settings["organisations"]["orga"].update(schedule_enabled=True, uploader_uid=1001, uploader_gid=1001)
+        self.settings["organisations"]["orgb"]["kms_key_arn"] = None
+        self.settings_path.write_text(json.dumps(self.settings))
+        self.render()
+        for org in config.ORGS:
+            directory = self.local / "rendered" / org
+            cron = next(d for d in yaml.safe_load_all((directory / "workloads.yaml").read_text()) if d["kind"] == "CronJob")
+            self.assertEqual(cron["spec"]["suspend"], org != "orga")
+            pod = cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+            self.assertEqual(pod["securityContext"]["runAsUser"], 1001 if org == "orga" else 999)
+            for container in pod["containers"] + pod["initContainers"]:
+                self.assertEqual(container["image"], self.settings["nightly_image"])
+            if org == "orgb":
+                for filename in ("reader-policy.json", "uploader-policy.json"):
+                    self.assertNotIn("kms:", (directory / "infra" / filename).read_text())
+
+    def test_unsafe_new_settings_rejected(self):
+        mutations = [
+            lambda s: s.update(s3_bucket="legacy-bucket"),
+            lambda s: s.update(nightly_image="example.invalid/nightly:latest"),
+            lambda s: s["organisations"]["orga"].update(schedule_enabled="false"),
+            lambda s: s["organisations"]["orga"].update(uploader_uid=0),
+            lambda s: s["organisations"]["orga"].update(kms_key_arn="*"),
+            lambda s: s["organisations"]["orga"].update(kms_key_arn="arn:aws:kms:ap-southeast-1:111111111111:key/foreign"),
+        ]
+        for mutate in mutations:
+            settings = copy.deepcopy(self.settings)
+            mutate(settings)
+            self.settings_path.write_text(json.dumps(settings))
+            with self.assertRaises(ValueError):
+                config.load_settings(self.settings_path)
+
+    def test_changed_bucket_or_schedule_requires_rerender(self):
+        self.render()
+        for change in ({"s3_bucket": "changed-bucket"}, {"schedule_enabled": True}):
+            settings = copy.deepcopy(self.settings)
+            settings["organisations"]["orga"].update(change)
+            with self.assertRaisesRegex(ValueError, "target is stale"):
+                config.check_file_target("orga", self.local / "rendered/orga/nightly.yaml", settings)
 
     def test_mixed_cluster_manifests_rejected(self):
         with self.assertRaisesRegex(ValueError, "Mixed organisation"):

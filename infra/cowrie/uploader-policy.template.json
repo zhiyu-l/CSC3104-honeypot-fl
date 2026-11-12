@@ -6,6 +6,12 @@
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:AbortMultipartUpload"],
       "Resource": "arn:REPLACE_AWS_PARTITION:s3:::REPLACE_S3_BUCKET/REPLACE_ORGANISATION/raw/*"
+    },
+    {
+      "Sid": "UploadNightlySessions",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": "arn:REPLACE_AWS_PARTITION:s3:::REPLACE_S3_BUCKET/REPLACE_ORGANISATION/processed/sessions/*"
     }
   ]
 }

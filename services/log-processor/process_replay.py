@@ -35,6 +35,12 @@ SESSION_ID = re.compile(r'[a-zA-Z0-9_-]{1,128}\Z')
 MAX_LINE = 1024 * 1024
 MAX_FILE = 512 * 1024 * 1024
 MAX_EVENTS = 250_000
+# Downloads may complete asynchronously after SSH disconnection. Keep their
+# feature contributions, but never extend the connection lifetime to their time.
+POST_CLOSE_EVENTS = frozenset({
+    'cowrie.session.file_download',
+    'cowrie.session.file_download.failed',
+})
 
 
 def require(condition, message):
@@ -167,17 +173,24 @@ def process(log_root: Path, selection_path: Path, output: Path, org: str, run_id
         kinds = [e['eventid'] for _, e in ordered]
         require(kinds.count('cowrie.session.connect') == 1 and kinds.count('cowrie.session.closed') == 1,
                 f'Session {uid}/{sid} needs exactly one connect and close event; missing/incomplete/reused ID')
-        require(kinds[0] == 'cowrie.session.connect' and kinds[-1] == 'cowrie.session.closed',
+        connected = next(t for t, e in ordered if e['eventid'] == 'cowrie.session.connect')
+        closed = next(t for t, e in ordered if e['eventid'] == 'cowrie.session.closed')
+        require(connected <= closed and all(
+            t >= connected and (t <= closed or e['eventid'] in POST_CLOSE_EVENTS)
+            for t, e in ordered),
                 f'Session {uid}/{sid} has events outside its lifetime')
+        post_close = Counter(e['eventid'] for t, e in ordered if t > closed)
         state = extractor._new_session(ORG_NAMES[org], f'{uid}:{sid}')
         for _, event in ordered:
             extractor.update(state, event)
+        state['start'], state['end'] = connected, closed
         row = extractor.finish(state)
         feature_values = {name: row[name] for name in FEATURE_NAMES}
         validate_row(feature_values)  # CSV stays raw: client/evaluator clip and transform once.
         require(parse_label(row['label']) == label_session(feature_values), 'Extractor/schema label mismatch')
         rows.append(row)
         outcome = dict(item, output_session_id=row['session_id'], observed_label=row['label'], events=len(ordered))
+        outcome['post_close_events'] = dict(post_close)
         if 'expected_label' in item:
             outcome['label_matches_expectation'] = item['expected_label'] == row['label']
         outcomes.append(outcome)
@@ -198,6 +211,8 @@ def process(log_root: Path, selection_path: Path, output: Path, org: str, run_id
         'csv_sha256': hashlib.sha256(csv_path.read_bytes()).hexdigest(),
         'selection_sha256': hashlib.sha256(json.dumps(selection, sort_keys=True).encode()).hexdigest(),
         'extractor_sha256': hashlib.sha256(Path(extractor.__file__).read_bytes()).hexdigest(),
+        'processor_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'session_lifetime_policy': 'connect/close boundaries; post-close download results retained without extending duration',
         'sources': sources, 'sessions': outcomes,
         'labels': 'observed rule-based labels; expected replay labels are recorded separately',
     }

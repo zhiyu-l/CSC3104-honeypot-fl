@@ -1,5 +1,9 @@
 # Combined nightly backup and feature processing
 
+**Scope: local kind lab.** For the destination AWS account, ECR image, Pod
+Identity, EFS state and enabled EKS schedules, use [the EKS runbook](cowrie-eks-nightly.md).
+The local instructions and paused source defaults below remain valid for kind.
+
 The three **local kind** overlays now configure the existing `cowrie-logs-to-s3`
 CronJob to do both raw backup and feature processing at midnight Asia/Singapore.
 They remain suspended in source until you test and explicitly resume them.

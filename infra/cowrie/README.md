@@ -23,8 +23,14 @@ produce per-cluster inputs under `.local/cowrie/rendered/<org>/infra/`:
 - `pod-identity-trust.json`: trusts `pods.eks.amazonaws.com` for AssumeRole and
   TagSession, constrained by the exact EKS cluster ARN, `default` namespace and
   uploader service account. Keep Pod Identity session tags enabled.
-- `uploader-policy.json`: permits PutObject and AbortMultipartUpload only under
-  `s3://<bucket>/<org>/raw/*`. No cross-organisation reads/deletes are granted.
+- `uploader-policy.json`: permits PutObject and AbortMultipartUpload under
+  `s3://<org-bucket>/<org>/raw/*`, and PutObject under `<org>/processed/sessions/*`.
+  When `kms_key_arn` is configured, includes GenerateDataKey and Decrypt on that
+  exact key for encrypted/multipart uploads. No S3 read/delete access is granted.
+- `reader-policy.json`: permits prefix-limited ListBucket and GetObject for that
+  organisation's raw and nightly features, plus Decrypt on its configured KMS
+  key. Assign it to a reader identity, not the uploader. These AWS policies do
+  not enable the separate manual `processed/replay/*` workflow.
 
 The common `pod-identity-trust.template.json` uses `default`; replace the cluster
 ARN placeholder only with the selected organisation's actual ARN. Organisation

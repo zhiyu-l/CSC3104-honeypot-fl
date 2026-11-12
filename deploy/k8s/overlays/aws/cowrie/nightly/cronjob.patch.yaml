@@ -1,0 +1,70 @@
+# AWS-only combined processor. Local kind overlays retain their own configuration.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cowrie-logs-to-s3
+spec:
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          $patch: replace
+          serviceAccountName: cowrie-log-uploader
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+          - name: prepare-processor-state
+            image: REPLACE_NIGHTLY_IMAGE
+            imagePullPolicy: IfNotPresent
+            command: [python, '-c', 'from pathlib import Path; Path("/volume/.nightly-state").mkdir(exist_ok=True)']
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+            resources:
+              requests: {cpu: 100m, memory: 64Mi}
+              limits: {cpu: '1', memory: 256Mi}
+            volumeMounts:
+            - {name: logs, mountPath: /volume}
+          containers:
+          - name: uploader
+            image: REPLACE_NIGHTLY_IMAGE
+            imagePullPolicy: IfNotPresent
+            command: [python, /app/services/log-processor/nightly.py]
+            env:
+            - name: ORG
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['organisation']
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                configMapKeyRef: {name: cowrie-upload-settings, key: AWS_DEFAULT_REGION}
+            - name: S3_BUCKET
+              valueFrom:
+                configMapKeyRef: {name: cowrie-upload-settings, key: S3_BUCKET}
+            - {name: AWS_EC2_METADATA_DISABLED, value: 'true'}
+            - {name: HOME, value: /tmp}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: [ALL]
+            resources:
+              requests: {cpu: 100m, memory: 128Mi}
+              limits: {cpu: '1', memory: 1Gi}
+            volumeMounts:
+            - {name: logs, mountPath: /logs, readOnly: true}
+            - {name: logs, mountPath: /state, subPath: .nightly-state}
+            - {name: scratch, mountPath: /tmp}
+          volumes:
+          - name: logs
+            persistentVolumeClaim: {claimName: cowrie-logs}
+          - name: scratch
+            emptyDir: {sizeLimit: 1Gi}

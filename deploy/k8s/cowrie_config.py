@@ -1,6 +1,7 @@
 """Render/validate locally, or run explicitly selected kubectl operations with context checks."""
 
 import argparse
+import hashlib
 import ipaddress
 import json
 from pathlib import Path
@@ -148,11 +149,28 @@ def validate(docs, org, allow_placeholders=False, schema_path=None):
     require(pv["persistentVolumeReclaimPolicy"] == "Retain", "EFS must be retained")
     require(pv["csi"]["driver"] == "efs.csi.aws.com" and "tls" in pv["mountOptions"], "EFS CSI configuration mismatch")
     cron = resource("CronJob", NAMESPACE, "cowrie-logs-to-s3")["spec"]
-    require(cron["suspend"] is True and cron["concurrencyPolicy"] == "Forbid", "CronJob safety settings changed")
+    require(type(cron["suspend"]) is bool and cron["concurrencyPolicy"] == "Forbid", "CronJob safety settings changed")
     require(cron["schedule"] == "0 0 * * *" and cron["timeZone"] == "Asia/Singapore", "CronJob schedule changed")
     upload_pod = cron["jobTemplate"]["spec"]["template"]["spec"]
     check_pod(upload_pod, NAMESPACE)
     uploader = next(c for c in upload_pod["containers"] if c["name"] == "uploader")
+    require(upload_pod["serviceAccountName"] == "cowrie-log-uploader", "Nightly processor must use Pod Identity")
+    security = upload_pod["securityContext"]
+    require(security["runAsNonRoot"] is True and security["runAsUser"] > 0 and
+            security["runAsGroup"] > 0 and security["seccompProfile"]["type"] == "RuntimeDefault",
+            "Nightly processor must run non-root with RuntimeDefault seccomp")
+    state_prepare = next(c for c in upload_pod["initContainers"] if c["name"] == "prepare-processor-state")
+    require(state_prepare["image"] == uploader["image"], "Nightly images differ")
+    require(uploader["command"] == ["python", "/app/services/log-processor/nightly.py"],
+            "AWS must run the combined nightly processor")
+    for container in (uploader, state_prepare):
+        require(not container.get("envFrom"), "AWS nightly containers must not use static credential Secrets")
+        sc = container["securityContext"]
+        require(sc["allowPrivilegeEscalation"] is False and sc["readOnlyRootFilesystem"] is True and
+                sc["capabilities"]["drop"] == ["ALL"], "Nightly container security changed")
+    state_mount = next(v for v in uploader["volumeMounts"] if v["mountPath"] == "/state")
+    require(state_mount == {"name": "logs", "mountPath": "/state", "subPath": ".nightly-state"},
+            "Checkpoints must persist in the dedicated EFS state subdirectory")
     require(cron["jobTemplate"]["spec"]["template"]["metadata"]["labels"]["organisation"] == org,
             "Uploader pod organisation label mismatch")
     org_env = next(e for e in uploader["env"] if e["name"] == "ORG")
@@ -207,16 +225,27 @@ def load_settings(settings_path):
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     require("REPLACE_" not in json.dumps(settings), "Replace every placeholder in local settings")
     require(re.fullmatch(r"[a-z]{2}(?:-[a-z]+)+-\d", settings["aws_region"]), "Invalid AWS region")
-    require(re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", settings["s3_bucket"]), "Invalid bucket name")
+    require("s3_bucket" not in settings, "Move s3_bucket into each organisation's settings")
+    require(re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", settings["nightly_image"]),
+            "nightly_image must be pinned to a sha256 digest")
     require(re.fullmatch(r"fs-[0-9a-f]{8,17}", settings["efs_filesystem_id"]), "Invalid EFS ID")
     require(set(settings["organisations"]) == set(ORGS), "Configure exactly orga, orgb and orgc")
     access_points, roles = set(), set()
     for org, values in settings["organisations"].items():
+        require(re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", values["s3_bucket"]), "Invalid bucket name")
+        require(type(values.get("schedule_enabled", False)) is bool, "schedule_enabled must be a boolean")
+        for field in ("uploader_uid", "uploader_gid"):
+            require(type(values.get(field, 999)) is int and values.get(field, 999) > 0,
+                    f"{field} must be a positive non-root integer")
         require(values["cluster_name"] == values["kubectl_context"] == CLUSTERS[org],
                 f"{org} must use cluster and context {CLUSTERS[org]}")
         arn = re.fullmatch(r"arn:(aws(?:-us-gov|-cn)?):eks:([^:]+):(\d{12}):cluster/(.+)", values["cluster_arn"])
         require(arn and arn[2] == settings["aws_region"] and arn[4] == CLUSTERS[org],
                 f"Cluster ARN does not identify {CLUSTERS[org]} in the configured region")
+        kms = values.get("kms_key_arn")
+        if kms is not None:
+            require(re.fullmatch(rf"arn:{arn[1]}:kms:{arn[2]}:{arn[3]}:key/[a-zA-Z0-9-]+", kms),
+                    "KMS key must be an exact key ARN in the cluster account and region")
         role = re.fullmatch(r"arn:(aws(?:-us-gov|-cn)?):iam::(\d{12}):role/[\w+=,.@/-]+", values["uploader_role_arn"])
         require(role and (role[1], role[2]) == (arn[1], arn[3]),
                 f"Uploader role must belong to {org}'s cluster account/partition")
@@ -237,7 +266,11 @@ def target_for(settings, org):
     values = settings["organisations"][org]
     return {"organisation": org, "cluster_name": values["cluster_name"],
             "cluster_arn": values["cluster_arn"], "kubectl_context": values["kubectl_context"],
-            "namespace": NAMESPACE}
+            "namespace": NAMESPACE,
+            "settings_sha256": hashlib.sha256(json.dumps(
+                {"aws_region": settings["aws_region"], "nightly_image": settings["nightly_image"],
+                 "efs_filesystem_id": settings["efs_filesystem_id"], "organisation": values},
+                sort_keys=True).encode()).hexdigest()}
 
 
 def render(settings_path, organisations):
@@ -252,7 +285,14 @@ def render(settings_path, organisations):
             elif doc["kind"] == "Service":
                 doc["spec"]["loadBalancerSourceRanges"] = values["allowed_source_cidrs"]
             elif doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "cowrie-upload-settings":
-                doc["data"] = {"AWS_DEFAULT_REGION": settings["aws_region"], "S3_BUCKET": settings["s3_bucket"]}
+                doc["data"] = {"AWS_DEFAULT_REGION": settings["aws_region"], "S3_BUCKET": values["s3_bucket"]}
+            elif doc["kind"] == "CronJob":
+                doc["spec"]["suspend"] = not values.get("schedule_enabled", False)
+                pod = doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+                pod["securityContext"].update(runAsUser=values.get("uploader_uid", 999),
+                                              runAsGroup=values.get("uploader_gid", 999))
+                for container in pod["containers"] + pod["initContainers"]:
+                    container["image"] = settings["nightly_image"]
         validate(docs, org)
         outputs.append((org, docs))
     # Validate every selected cluster before writing any outputs. Never combine
@@ -268,6 +308,13 @@ def render(settings_path, organisations):
             (output / f"{group}.yaml").write_text(
                 yaml.safe_dump_all([d for d in docs if d["kind"] in kinds], sort_keys=False), encoding="utf-8")
         (output / "target.json").write_text(json.dumps(target_for(settings, org), indent=2) + "\n", encoding="utf-8")
+        # Focused upgrade artifact: do not reconcile Cowrie, HPA, storage or NLB
+        # when installing/updating only the nightly pipeline on existing clusters.
+        nightly = [d for d in docs if d["kind"] == "CronJob" or
+                   (d["kind"], d["metadata"]["name"]) in {
+                       ("ConfigMap", "cowrie-upload-settings"),
+                       ("ServiceAccount", "cowrie-log-uploader")}]
+        (output / "nightly.yaml").write_text(yaml.safe_dump_all(nightly, sort_keys=False), encoding="utf-8")
         render_identity(settings, org, output / "infra")
         print(f"Rendered {org} for context {CLUSTERS[org]} to {output}; no deployment performed.")
 
@@ -285,8 +332,24 @@ def render_identity(settings, org, output):
     require(conditions["aws:RequestTag/kubernetes-namespace"] == NAMESPACE, "Pod Identity trust must use default")
     policy = json.loads((ROOT / "infra/cowrie/uploader-policy.template.json").read_text())
     partition = values["cluster_arn"].split(":")[1]
-    policy["Statement"][0]["Resource"] = f"arn:{partition}:s3:::{settings['s3_bucket']}/{org}/raw/*"
-    for name, content in (("pod-identity-association", inputs), ("pod-identity-trust", trust), ("uploader-policy", policy)):
+    bucket = values["s3_bucket"]
+    bucket_arn = f"arn:{partition}:s3:::{bucket}"
+    policy["Statement"][0]["Resource"] = f"{bucket_arn}/{org}/raw/*"
+    policy["Statement"][1]["Resource"] = f"{bucket_arn}/{org}/processed/sessions/*"
+    reader = {"Version": "2012-10-17", "Statement": [
+        {"Sid": "ListOrganisationLogs", "Effect": "Allow", "Action": ["s3:ListBucket"],
+         "Resource": bucket_arn, "Condition": {"StringLike": {"s3:prefix": [
+             f"{org}/raw/*", f"{org}/processed/sessions/*"]}}},
+        {"Sid": "ReadOrganisationLogs", "Effect": "Allow", "Action": ["s3:GetObject"],
+         "Resource": [f"{bucket_arn}/{org}/raw/*", f"{bucket_arn}/{org}/processed/sessions/*"]},
+    ]}
+    if values.get("kms_key_arn"):
+        policy["Statement"].append({"Sid": "KmsForUpload", "Effect": "Allow",
+            "Action": ["kms:GenerateDataKey", "kms:Decrypt"], "Resource": values["kms_key_arn"]})
+        reader["Statement"].append({"Sid": "KmsForRead", "Effect": "Allow",
+            "Action": ["kms:Decrypt"], "Resource": values["kms_key_arn"]})
+    for name, content in (("pod-identity-association", inputs), ("pod-identity-trust", trust),
+                          ("uploader-policy", policy), ("reader-policy", reader)):
         require("REPLACE_" not in json.dumps(content), "Unresolved IAM input placeholders")
         (output / f"{name}.json").write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
 
@@ -306,7 +369,7 @@ def check_file_target(org, filename, settings):
     path = Path(filename).resolve()
     rendered = (LOCAL / "rendered" / org).resolve()
     secrets = (LOCAL / "secrets" / org).resolve()
-    is_rendered = path.parent == rendered and path.name in {f"{g}.yaml" for g in GROUPS}
+    is_rendered = path.parent == rendered and path.name in ({f"{g}.yaml" for g in GROUPS} | {"nightly.yaml"})
     is_secret = path.parent == secrets and path.name.endswith(".secret.yaml")
     require(is_rendered or is_secret, "Use only the selected organisation's rendered YAML or local Secret files")
     if is_rendered:

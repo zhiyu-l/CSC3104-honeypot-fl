@@ -153,7 +153,7 @@ flwr run . local-deployment --stream --run-config "fail-prob=0.0 num-server-roun
 | `abort-on-failed-round` | false | stop the run instead of skipping a failed round |
 | `fail-prob` | 0.0 | chance each client crashes on purpose (e.g. 0.3 for fault-tolerance experiments) |
 | `local-epochs`, `lr`, `batch-size` | 3, 0.01, 64 | local training settings |
-| `save-model` | false | save the final model to `final_model.npz` |
+| `save-model` | true | save successful round checkpoints and the final `model.npz` under `models/<run-name>/`, with JSON metadata |
 
 ## 7. Logs and shutdown
 

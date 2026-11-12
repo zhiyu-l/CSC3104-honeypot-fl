@@ -1,7 +1,9 @@
 # Process real replay logs for the ML team
 
-This guide covers explicit replay selection. For the combined midnight CronJobs
-that automatically process all completed sessions, follow [the nightly guide](cowrie-nightly.md).
+This guide covers explicit replay selection in the local kind lab. For combined
+midnight processing of completed sessions, use [the EKS runbook](cowrie-eks-nightly.md)
+on AWS or [the local nightly guide](cowrie-nightly.md) on kind. The manual Job,
+credential Secrets and old bucket examples below are not destination EKS manifests.
 
 The operator owns this path:
 

@@ -1,6 +1,10 @@
 # Cowrie replay log processor
 
-For the current combined nightly CronJob, use [the nightly guide](../../docs/cowrie-nightly.md).
+For the delayed download result validation fix and EKS rollout, see
+[the recovery guide](../../docs/cowrie-late-download-recovery.md).
+
+For the combined nightly CronJob, use [the EKS runbook](../../docs/cowrie-eks-nightly.md)
+on AWS or [the local nightly guide](../../docs/cowrie-nightly.md) on kind.
 `nightly.py` adds discovery, raw backup, persistent pending batches, recovery and
 checkpoints. Build it with `nightly.Dockerfile`; the original `Dockerfile` below
 remains for manually selected replay Jobs.
@@ -24,5 +28,7 @@ image with networking disabled and a read-only root filesystem, plus 15
 Kubernetes rendering/configuration tests. The combined nightly image built
 successfully. The operator subsequently deployed it and published 1,000 sessions
 for each organisation; see the [handoff audit](../../docs/cowrie-handoff-audit.md).
-Schedules remain paused. New installations still require IAM setup, image loading
+Those local schedules remain paused. The destination EKS schedules were enabled
+after manual uploads and initial CSV checksums passed (see the EKS runbook).
+New installations still require IAM setup, image loading
 and deployment. Manual selected-replay Jobs additionally need replay selections.

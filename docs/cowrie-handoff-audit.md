@@ -1,5 +1,9 @@
 # Cowrie operator-to-ML handoff audit
 
+Historical local-kind record. For the newer destination EKS evidence and enabled
+schedules, see [the EKS runbook](cowrie-eks-nightly.md). Statements below describe
+the 7 November local audit, not the current AWS installation.
+
 Date: 7 November 2026 (Asia/Singapore). Supplements the historical
 [3 November audit](cowrie-local-audit.md).
 
