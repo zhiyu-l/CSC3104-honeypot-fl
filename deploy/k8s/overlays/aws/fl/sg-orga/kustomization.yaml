@@ -1,4 +1,3 @@
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -19,7 +18,8 @@ configMapGenerator:
       - FL_ORG_INDEX=0
       - AWS_DEFAULT_REGION=ap-southeast-1
       - S3_BUCKET=csc3104-cowrie-orga-909891185696
-      - S3_FEATURES_KEY=orga/processed/fl-smoke/orga-train.csv
+      - S3_FEATURES_KEY=orga/processed/base/orgA.csv
+      - FL_BATCHES_URI=s3://csc3104-cowrie-orga-909891185696/orga/processed/sessions/
       - SUPERLINK_ADDRESS=coordinator.fl.internal:9092
 
 patches:

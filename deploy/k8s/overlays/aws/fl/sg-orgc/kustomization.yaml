@@ -18,7 +18,7 @@ configMapGenerator:
       - FL_ORG_INDEX=2
       - AWS_DEFAULT_REGION=ap-southeast-1
       - S3_BUCKET=csc3104-cowrie-orgc-909891185696
-      - S3_FEATURES_KEY=orgc/processed/sessions/0f1a9d04183a41088c18c9cf82677345/sessions.csv
+      - S3_FEATURES_KEY=orgc/processed/base/orgC.csv
       - FL_BATCHES_URI=s3://csc3104-cowrie-orgc-909891185696/orgc/processed/sessions/
       - SUPERLINK_ADDRESS=coordinator.fl.internal:9092
 
