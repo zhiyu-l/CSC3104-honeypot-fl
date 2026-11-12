@@ -76,6 +76,55 @@ class ProcessorTests(unittest.TestCase):
             self.run_process()
         self.assertFalse((self.root / 'out/sessions.csv').exists())
 
+    def test_delayed_download_results_preserve_session_duration_and_features(self):
+        # Match the production failure: download failure arrives ~7.49s after close.
+        self.events[-1].pop('duration')
+        late_failure = event('session.file_download.failed', 10)
+        late_failure['timestamp'] = '2026-11-07T00:00:10.492495Z'
+        self.write(self.events + [late_failure, event('session.file_download', 11, url='https://example.invalid/file')])
+        report = self.run_process()
+        with (self.root / 'out/sessions.csv').open() as f:
+            row = next(csv.DictReader(f))
+        self.assertEqual(row['duration_s'], '3.0')
+        self.assertEqual(row['n_url_downloads'], '1')
+        self.assertEqual(row['n_commands'], '1')
+        self.assertEqual(report['sessions'][0]['post_close_events'], {
+            'cowrie.session.file_download.failed': 1, 'cowrie.session.file_download': 1})
+        self.assertEqual(report['processor_sha256'], hashlib.sha256(SCRIPT.read_bytes()).hexdigest())
+
+    def test_late_failure_does_not_change_features(self):
+        self.write(self.events + [event('session.file_download.failed', 11)])
+        self.run_process()
+        state = p.extractor._new_session('orgA', UID + ':replay1')
+        for e in self.events:
+            p.extractor.update(state, e)
+        with (self.root / 'out/sessions.csv').open() as f:
+            self.assertEqual(next(csv.DictReader(f)), {k: str(v) for k, v in p.extractor.finish(state).items()})
+
+    def test_other_out_of_lifetime_events_still_rejected(self):
+        for kind in ('command.input', 'login.success', 'session.file_upload'):
+            with self.subTest(kind=kind):
+                self.write(self.events + [event(kind, 11)])
+                with self.assertRaisesRegex(ValueError, 'outside its lifetime'):
+                    self.run_process()
+                self.assertFalse((self.root / 'out/sessions.csv').exists())
+
+    def test_download_before_connection_still_rejected(self):
+        self.events[0] = event('session.connect', 1)
+        self.write([event('session.file_download.failed', 0)] + self.events)
+        with self.assertRaisesRegex(ValueError, 'outside its lifetime'):
+            self.run_process()
+
+    def test_equal_timestamp_events_do_not_depend_on_file_order(self):
+        self.write([event('login.success', 0), self.events[0],
+                    self.events[-1], event('command.input', 3, input='whoami')])
+        self.assertEqual(self.run_process()['rows'], 1)
+
+    def test_repeated_session_boundaries_still_rejected(self):
+        self.write(self.events + [event('session.closed', 11)])
+        with self.assertRaisesRegex(ValueError, 'connect and close'):
+            self.run_process()
+
     def test_missing_selected_session_rejected(self):
         self.write()
         self.data['sessions'][0]['session_id'] = 'missing'

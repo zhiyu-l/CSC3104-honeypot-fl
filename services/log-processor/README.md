@@ -1,5 +1,8 @@
 # Cowrie replay log processor
 
+For the delayed download result validation fix and EKS rollout, see
+[the recovery guide](../../docs/cowrie-late-download-recovery.md).
+
 For the combined nightly CronJob, use [the EKS runbook](../../docs/cowrie-eks-nightly.md)
 on AWS or [the local nightly guide](../../docs/cowrie-nightly.md) on kind.
 `nightly.py` adds discovery, raw backup, persistent pending batches, recovery and

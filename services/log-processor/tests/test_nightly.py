@@ -90,6 +90,18 @@ class NightlyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'destination mismatch'):
             nightly.run(self.s3, self.logs, self.state, 'orgb', 'bucket-b')
 
+    def test_late_download_failure_publishes_and_checkpoints_once(self):
+        self.events.append(event('session.file_download.failed', 10))
+        self.write()
+        original = (self.logs / UID / 'cowrie.json').read_bytes()
+        self.run_batch()
+        manifest = next(json.loads(data) for key, data in self.s3.objects.items() if key.endswith('manifest.json'))
+        self.assertEqual(manifest['sessions'][0]['post_close_events'], {'cowrie.session.file_download.failed': 1})
+        self.assertEqual(json.loads((self.state / 'checkpoint.json').read_text())['processed'], [UID + '/replay1'])
+        self.run_batch()
+        self.assertEqual(len(self.s3.writes), 2)
+        self.assertEqual((self.logs / UID / 'cowrie.json').read_bytes(), original)
+
     def test_no_completed_sessions_only_raw_backup(self):
         self.events = [event('session.connect', 0)]
         self.write()
