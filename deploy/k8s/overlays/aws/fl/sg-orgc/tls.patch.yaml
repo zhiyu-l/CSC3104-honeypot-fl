@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-client
+spec:
+  template:
+    spec:
+      hostAliases:
+          - ip: "10.2.20.80"
+            hostnames:
+              - "coordinator.fl.internal"
+      containers:
+        - name: supernode
+          args:
+            - --root-certificates=/etc/fl-tls/ca.crt
+            - --auth-supernode-private-key=/etc/fl-auth/auth.key
+            - --superlink=$(SUPERLINK_ADDRESS)
+            - --host=127.0.0.1
+            - --port=9094
+            - --isolation=subprocess
+            - --health-server-address=0.0.0.0:8081
+          volumeMounts:
+            - name: fl-superlink-ca
+              mountPath: /etc/fl-tls
+              readOnly: true
+            - name: fl-supernode-auth
+              mountPath: /etc/fl-auth
+              readOnly: true
+      volumes:
+        - name: fl-superlink-ca
+          secret:
+            secretName: fl-superlink-ca
+        - name: fl-supernode-auth
+          secret:
+            secretName: fl-supernode-auth
+            defaultMode: 0440
+
+

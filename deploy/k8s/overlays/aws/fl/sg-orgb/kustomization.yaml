@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: fl
+
+resources:
+  - ../../../../base/fl-client
+
+images:
+  - name: honeypot-fl-client
+    newName: 909891185696.dkr.ecr.ap-southeast-2.amazonaws.com/honeypot-fl-client
+    newTag: dev
+
+configMapGenerator:
+  - name: fl-client-settings
+    literals:
+      - FL_ORG_ID=org-b
+      - FL_ORG_INDEX=1
+      - AWS_DEFAULT_REGION=ap-southeast-1
+      - S3_BUCKET=csc3104-cowrie-orgb-909891185696
+      - S3_FEATURES_KEY=orgb/processed/sessions/972a0cfbc0134a3d89792edb43c5cd3b/sessions.csv
+      - FL_BATCHES_URI=s3://csc3104-cowrie-orgb-909891185696/orgb/processed/sessions/
+      - SUPERLINK_ADDRESS=coordinator.fl.internal:9092
+
+patches:
+
+  - path: tls.patch.yaml
+  - path: serviceaccount.delete.yaml
+
