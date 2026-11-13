@@ -123,6 +123,25 @@ class NightlyTests(unittest.TestCase):
         self.assertTrue(self.s3.raw)
         self.assertFalse(self.s3.objects)
 
+    def test_large_backlog_rotated_boundaries_and_checkpoint_exclusion(self):
+        # More than the previous 100,000 candidate cap, with closes encountered
+        # before connects and one incomplete session that must not block progress.
+        pod = self.logs / UID
+        with (pod / 'cowrie.json').open('w') as handle:
+            for index in range(100005):
+                handle.write(json.dumps(event('session.closed', 2, sid=f's{index:06d}')) + '\n')
+                handle.write(json.dumps(event('command.input', 1, sid=f's{index:06d}', input='id')) + '\n')
+        with (pod / 'cowrie.json.1').open('w') as handle:
+            for index in range(100004):
+                handle.write(json.dumps(event('session.connect', 0, sid=f's{index:06d}')) + '\n')
+        done = {UID + '/s000000'}
+        first = nightly.discover(self.logs, done)
+        self.assertEqual(first, [UID + f'/s{i:06d}' for i in range(1, 1001)])
+        second = nightly.discover(self.logs, done | set(first))
+        self.assertEqual(second, [UID + f'/s{i:06d}' for i in range(1001, 2001)])
+        remaining_done = {UID + f'/s{i:06d}' for i in range(100004)}
+        self.assertEqual(nightly.discover(self.logs, remaining_done), [])
+
     def test_corrupt_pending_batch_not_published(self):
         self.s3.fail = 'sessions.csv'
         with self.assertRaises(OSError):

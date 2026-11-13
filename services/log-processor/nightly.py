@@ -9,6 +9,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
+import tempfile
 import uuid
 
 from process_replay import process, POD_UID, SESSION_ID, SAFE_ID, MAX_FILE, MAX_LINE, require
@@ -43,14 +45,31 @@ def log_paths(root):
 
 
 def discover(root, done):
-    """Collect completed candidates; the shared processor validates full sessions.
+    """Index candidates on temporary disk; validate selected sessions separately.
 
-    Sessions with nothing but connect/closed are skipped: they never started an
-    SSH handshake (on AWS these are the NLB's TCP health checks, ~12k per org per
-    day), so they can only ever be 'scan' rows, which training drops anyway.
-    They are not checkpointed and stay in the raw backup.
+    Require connect, close, and another event, excluding TCP-only sessions such
+    as NLB health checks. Excluded sessions remain in raw backups and are not
+    checkpointed. Disk indexing avoids an in-memory candidate-count limit.
     """
-    connects, closes, active = set(), set(), set()
+    with tempfile.TemporaryDirectory(prefix='cowrie-discovery-') as directory:
+        connection = sqlite3.connect(str(Path(directory) / 'candidates.sqlite'))
+        try:
+            connection.execute('PRAGMA cache_size = -4096')
+            connection.execute('CREATE TABLE candidates (key TEXT PRIMARY KEY, flags INTEGER NOT NULL) WITHOUT ROWID')
+            with connection:
+                connection.executemany(
+                    'INSERT INTO candidates VALUES (?, ?) ON CONFLICT(key) DO UPDATE '
+                    'SET flags = candidates.flags | excluded.flags',
+                    candidate_events(root, done))
+            return [row[0] for row in connection.execute(
+                'SELECT key FROM candidates WHERE flags = 7 ORDER BY key LIMIT 1000')]
+        finally:
+            connection.close()
+
+
+def candidate_events(root, done):
+    """Stream boundary and activity flags across rotated logs."""
+
     for path in log_paths(root):
         require(path.stat().st_size <= MAX_FILE, 'Log exceeds processing size limit')
         opener = gzip.open if path.name.endswith('.gz') else open
@@ -74,13 +93,12 @@ def discover(root, done):
                     continue
                 kind = event.get('eventid')
                 if kind == 'cowrie.session.connect':
-                    connects.add(key)
+                    yield key, 1
                 elif kind == 'cowrie.session.closed':
-                    closes.add(key)
-                elif key not in active:
-                    active.add(key)
-                    require(len(active) <= 100000, 'Too many candidates; archive or split source logs')
-    return sorted(connects & closes & active)[:1000]
+                    yield key, 2
+                else:
+                    yield key, 4
+
 
 
 def publish(s3, bucket, org, pending):
