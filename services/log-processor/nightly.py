@@ -43,8 +43,14 @@ def log_paths(root):
 
 
 def discover(root, done):
-    """Collect completed candidates; the shared processor validates full sessions."""
-    connects, closes = set(), set()
+    """Collect completed candidates; the shared processor validates full sessions.
+
+    Sessions with nothing but connect/closed are skipped: they never started an
+    SSH handshake (on AWS these are the NLB's TCP health checks, ~12k per org per
+    day), so they can only ever be 'scan' rows, which training drops anyway.
+    They are not checkpointed and stay in the raw backup.
+    """
+    connects, closes, active = set(), set(), set()
     for path in log_paths(root):
         require(path.stat().st_size <= MAX_FILE, 'Log exceeds processing size limit')
         opener = gzip.open if path.name.endswith('.gz') else open
@@ -66,12 +72,15 @@ def discover(root, done):
                 key = path.parent.name + '/' + sid
                 if key in done:
                     continue
-                if event.get('eventid') == 'cowrie.session.connect':
+                kind = event.get('eventid')
+                if kind == 'cowrie.session.connect':
                     connects.add(key)
-                if event.get('eventid') == 'cowrie.session.closed':
+                elif kind == 'cowrie.session.closed':
                     closes.add(key)
-                require(len(connects | closes) <= 100000, 'Too many candidates; archive or split source logs')
-    return sorted(connects & closes)[:1000]
+                elif key not in active:
+                    active.add(key)
+                    require(len(active) <= 100000, 'Too many candidates; archive or split source logs')
+    return sorted(connects & closes & active)[:1000]
 
 
 def publish(s3, bucket, org, pending):
