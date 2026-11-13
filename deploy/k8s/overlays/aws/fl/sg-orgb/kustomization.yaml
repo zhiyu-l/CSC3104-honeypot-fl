@@ -8,8 +8,8 @@ resources:
 
 images:
   - name: honeypot-fl-client
-    newName: 909891185696.dkr.ecr.ap-southeast-2.amazonaws.com/honeypot-fl-client
-    newTag: dev
+    newName: 909891185696.dkr.ecr.ap-southeast-1.amazonaws.com/csc3104/fl-client
+    digest: sha256:f6836dc3d8bfa922be8cb0afca63aa71de94e2393dfd30f288070f0c11875089  # tag v2
 
 configMapGenerator:
   - name: fl-client-settings
@@ -20,6 +20,7 @@ configMapGenerator:
       - S3_BUCKET=csc3104-cowrie-orgb-909891185696
       - S3_FEATURES_KEY=orgb/processed/base/orgB.csv
       - FL_BATCHES_URI=s3://csc3104-cowrie-orgb-909891185696/orgb/processed/sessions/
+      - FL_EXCLUDE_URI=s3://csc3104-cowrie-orgb-909891185696/orgb/processed/exclude/
       - SUPERLINK_ADDRESS=coordinator.fl.internal:9092
 
 patches:

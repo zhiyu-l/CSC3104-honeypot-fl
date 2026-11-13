@@ -20,6 +20,9 @@ Settings (flag, or env var):
     --root-certificates  FL_ROOT_CERTIFICATES CA certificate to trust
     --run-config  FL_RUN_CONFIG               extra settings, e.g. "num-server-rounds=10 eval-data='/models/test.csv'"
     --dry-run                                 print the command, submit nothing
+                  FL_HOST_OVERRIDE            name=address to connect to, keeping TLS name checks
+                                              (see flwr_cli.py), e.g. on AWS
+                                              coordinator.fl.internal=<internal NLB DNS name>
 
 Locally (stack from deploy/local running):
     python -m fl_coordinator.trigger --insecure --app deploy/flower-app
@@ -40,6 +43,7 @@ from pathlib import Path
 
 ACTIVE = ("pending", "starting", "running")
 CONNECTION = "trigger"
+FLWR = [sys.executable, "-m", "fl_coordinator.flwr_cli"]   # `flwr`, plus FL_HOST_OVERRIDE
 
 
 def _env_bool(name: str) -> bool:
@@ -55,6 +59,19 @@ def write_flwr_config(home: Path, address: str, insecure: bool, root_certificate
         lines.append(f'root-certificates = "{root_certificates}"')
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.toml").write_text("\n".join(lines) + "\n")
+
+
+def json_result(stdout: str) -> dict | None:
+    """The CLI's --format json reply if it reports success, else None.
+
+    `flwr ... --format json` can exit 0 on failure (e.g. SuperLink not up yet)
+    and report it as {"success": false, ...}, so the exit code alone is not enough.
+    """
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and data.get("success") is True else None
 
 
 def active_runs(ls_json: str) -> list[dict]:
@@ -91,9 +108,9 @@ def main(argv: list[str] | None = None) -> int:
         write_flwr_config(Path(home), a.superlink, a.insecure, a.root_certificates)
         env = {**os.environ, "FLWR_HOME": home}
 
-        ls = subprocess.run(["flwr", "ls", CONNECTION, "--format", "json"],
+        ls = subprocess.run(FLWR + ["ls", CONNECTION, "--format", "json"],
                             capture_output=True, text=True, env=env)
-        if ls.returncode != 0:
+        if ls.returncode != 0 or json_result(ls.stdout) is None:
             print(f"Cannot reach the coordinator at {a.superlink}:\n{ls.stdout}{ls.stderr}", file=sys.stderr)
             return 1
         busy = active_runs(ls.stdout)
@@ -102,14 +119,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Not starting a new cycle: run(s) still in progress: {ids}")
             return 0
 
-        cmd = ["flwr", "run", a.app, CONNECTION, "--run-config", run_config, "--format", "json"]
-        print("$ " + " ".join(cmd))
+        cmd = FLWR + ["run", a.app, CONNECTION, "--run-config", run_config, "--format", "json"]
+        print("$ flwr " + " ".join(cmd[len(FLWR):]))
         if a.dry_run:
             return 0
         sub = subprocess.run(cmd, capture_output=True, text=True, env=env)
         print(sub.stdout + sub.stderr)
-        if sub.returncode != 0:
-            return sub.returncode
+        if sub.returncode != 0 or json_result(sub.stdout) is None:
+            print("Submitting the run failed (see above).", file=sys.stderr)
+            return sub.returncode or 1
     print(f"Submitted cycle {run_name}.")
     return 0
 

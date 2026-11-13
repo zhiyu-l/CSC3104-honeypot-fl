@@ -53,7 +53,8 @@ class NightlyTests(unittest.TestCase):
         self.run_batch()
         self.assertEqual(len(self.s3.writes), 2)
         self.assertEqual(len(self.s3.raw), 2)
-        self.events.append(event('session.closed', 5, sid='active'))
+        self.events += [event('command.input', 4, sid='active', input='id'),
+                        event('session.closed', 5, sid='active')]
         self.write()
         self.run_batch()
         self.assertEqual(len(self.s3.objects), 4)
@@ -101,6 +102,19 @@ class NightlyTests(unittest.TestCase):
         self.run_batch()
         self.assertEqual(len(self.s3.writes), 2)
         self.assertEqual((self.logs / UID / 'cowrie.json').read_bytes(), original)
+
+    def test_tcp_only_sessions_skipped_and_not_counted(self):
+        # NLB health checks: connect + closed, nothing else. They must neither take
+        # batch slots nor count towards the candidate limit.
+        checks = [e for i in range(3) for e in (event('session.connect', 10, sid=f'hc{i}', src_ip='10.0.0.209'),
+                                                 event('session.closed', 11, sid=f'hc{i}'))]
+        self.events = checks + self.events
+        self.write()
+        self.assertEqual(nightly.discover(self.logs, set()), [UID + '/replay1'])
+        self.run_batch()
+        self.assertEqual(json.loads((self.state / 'checkpoint.json').read_text())['processed'], [UID + '/replay1'])
+        self.run_batch()
+        self.assertEqual(len(self.s3.writes), 2)
 
     def test_no_completed_sessions_only_raw_backup(self):
         self.events = [event('session.connect', 0)]
