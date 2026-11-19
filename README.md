@@ -22,6 +22,7 @@ Fault Tolerant Federated Learning for Collaborative Honeypot Intrusion Detection
 ├── infra/                  AWS infrastructure as code
 ├── libs/fl-common/         Code shared between services
 ├── models/                 Saved global models, one folder per run (git-ignored)
+├── network_cmd/            AWS CLI scripts that built the coordinator and org networks
 ├── services/
 │   ├── client/             Flower client (one per organisation)
 │   ├── coordinator/        Flower server and aggregation strategy
@@ -65,6 +66,9 @@ Scripts for the ML pipeline that run outside the services: `cowrie_dataset/` lab
 
 ### `infra/`
 Infrastructure as code for the provider side on AWS: networking, EC2 instances for the Kubernetes cluster, S3 buckets, ECR repositories and IAM roles. Nothing should be created by hand in the AWS console without being captured here.
+
+### `network_cmd/`
+The AWS CLI (PowerShell) commands used to build the AWS network and security setup, run from AWS CloudShell. `coordinator-commands.ps1` builds the coordinator side (VPC, KMS, CA and certificates, EFS, S3, IAM, the PrivateLink endpoint service and the ECS service) and also adds orga's PrivateLink endpoint (step 1.15). `org-setup.ps1 -Org orga|orgb|orgc` builds one organisation and connects it to the coordinator through PrivateLink (the current orga was built by hand, so `-Org orga` is only for rebuilding it). What each step does and why is explained in [AWS_SETUP_README.md](AWS_SETUP_README.md).
 
 ### `experiments/`
 Everything needed to reproduce the evaluation: scenario configs (e.g. baseline FedAvg vs our coordinator, slow client, client failure and recovery), scripts to run them and collect results, and the resulting data and plots used in the report.

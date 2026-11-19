@@ -1,6 +1,8 @@
 <#
   CSC3104 honeypot FL - per-organisation AWS infrastructure (steps 2.1 - 2.9)
-  Same setup as orga, with all fixes from the orga build included.
+  Works for orga, orgb and orgc. Written from the hand-built orga, with all fixes from
+  that build included. The current orga was built by hand; only use -Org orga to
+  rebuild it after deleting the old one (the pre-flight check stops if orga.json exists).
 
   CLIENT PATH: AWS PrivateLink. Step 2.9 creates this org's interface endpoint to
   the coordinator's endpoint service (in the FL subnets), accepts it, and points
@@ -11,8 +13,8 @@
   HOW TO RUN (AWS CloudShell, Singapore region):
     1. Actions -> Upload file -> this file (org-setup.ps1)
     2. Actions -> Upload file -> ca.key (from your PC)
-    3. In CloudShell:   pwsh -File ~/org-setup.ps1 -Org orgb
-       (later for orgc: pwsh -File ~/org-setup.ps1 -Org orgc, upload ca.key again first)
+    3. In CloudShell:   pwsh -File ~/org-setup.ps1 -Org orgb    (or -Org orga / -Org orgc)
+       (for each further org, upload ca.key again first - the script deletes it)
 
   The script stops at the first error. It prints which section failed.
   Do NOT simply re-run it after a failure (it would create duplicates) - check the
@@ -20,7 +22,7 @@
   Takes about 30-40 minutes (EKS cluster creation is the slow part).
 #>
 param(
-  [ValidateSet("orgb", "orgc")]
+  [ValidateSet("orga", "orgb", "orgc")]
   [string]$Org = "orgb"
 )
 
@@ -370,7 +372,7 @@ kubectl create serviceaccount log-processor -n default
 kubectl create serviceaccount fl-client -n fl
 kubectl annotate serviceaccount fl-client -n fl "eks.amazonaws.com/role-arn=$($S.FlClientRoleArn)" --overwrite
 
-# AWS Load Balancer Controller (IAM policy is shared and already exists from orga)
+# AWS Load Balancer Controller (IAM policy is shared by all orgs; created here only if it does not exist yet)
 $LbcPolicyArn = "arn:aws:iam::${AccountId}:policy/$Prefix-AWSLoadBalancerControllerIAMPolicy"
 try { aws iam get-policy --policy-arn $LbcPolicyArn --query Policy.Arn --output text | Out-Null }
 catch {
@@ -522,6 +524,6 @@ kubectl run np-test --image=busybox:1.37 --labels app=cowrie --restart=Never --r
 Save-Org
 Section "DONE: $Org"
 "IDs saved in $Work/$Org.json, full log in $Work/$Org-setup.log"
-"kubectl now points at $($O.Cluster). Switch back with: kubectl config use-context orga-honeypot-cluster"
+"kubectl now points at $($O.Cluster). Switch with: kubectl config use-context <org>-honeypot-cluster"
 "Keep ca.key on your PC only (it was deleted from CloudShell)."
 Stop-Transcript | Out-Null
